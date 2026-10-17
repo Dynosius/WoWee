@@ -713,7 +713,6 @@ private:
     bool rKeyWasDown = false;
     bool runPace = false;
     bool autoRunning = false;
-    bool tildeWasDown = false;
 
     // Auto-follow target position (WoW /follow). Non-null when following.
     const glm::vec3* autoFollowTarget_ = nullptr;

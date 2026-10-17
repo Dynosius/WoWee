@@ -1602,6 +1602,7 @@ struct LiveBinding {
     wowee::ui::KeybindingManager::Action action;
 };
 const LiveBinding kLiveBindings[] = {
+    {"TOGGLEAUTORUN",     wowee::ui::KeybindingManager::Action::TOGGLE_AUTORUN},
     {"TOGGLECHARACTER0",  wowee::ui::KeybindingManager::Action::TOGGLE_CHARACTER_SCREEN},
     {"TOGGLEBACKPACK",    wowee::ui::KeybindingManager::Action::TOGGLE_BAGS},
     {"TOGGLESPELLBOOK",   wowee::ui::KeybindingManager::Action::TOGGLE_SPELLBOOK},

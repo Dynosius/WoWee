@@ -23,6 +23,7 @@ KeybindingManager::KeybindingManager() {
 }
 
 void KeybindingManager::initializeDefaults() {
+    bindings_[static_cast<int>(Action::TOGGLE_AUTORUN)] = ImGuiKey_NumLock;
     // Set default keybindings
     bindings_[static_cast<int>(Action::TOGGLE_CHARACTER_SCREEN)] = ImGuiKey_C;
     bindings_[static_cast<int>(Action::TOGGLE_INVENTORY)] = ImGuiKey_I;
@@ -170,6 +171,7 @@ const char* KeybindingManager::getActionName(Action action) {
         case Action::TOGGLE_ACHIEVEMENTS: return "Achievements";
         case Action::TOGGLE_SKILLS: return "Skills / Professions";
         case Action::TOGGLE_PVP: return "Player vs Player";
+        case Action::TOGGLE_AUTORUN: return "Autorun";
         case Action::ACTION_COUNT: break;
     }
     return "Unknown";
@@ -238,6 +240,8 @@ void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
         else if (action == "toggle_skills") actionIdx = static_cast<int>(Action::TOGGLE_SKILLS);
         else if (action == "toggle_pvp") actionIdx = static_cast<int>(Action::TOGGLE_PVP);
 
+        else if (action == "toggle_autorun") actionIdx = static_cast<int>(Action::TOGGLE_AUTORUN);
+
         if (actionIdx < 0) continue;
 
         // Parse key string to ImGuiKey (simple mapping of common keys)
@@ -266,6 +270,8 @@ void KeybindingManager::loadFromConfigFile(const std::string& filePath) {
             key = ImGuiKey_Home;
         } else if (keyStr == "End") {
             key = ImGuiKey_End;
+        } else if (keyStr == "NumLock") {
+            key = ImGuiKey_NumLock;
         } else if (keyStr == "Mouse4") {
             key = ImGuiKey_MouseX1;
         } else if (keyStr == "Mouse5") {
@@ -340,6 +346,7 @@ void KeybindingManager::saveToConfigFile(const std::string& filePath) const {
         {.action = Action::TOGGLE_ACHIEVEMENTS, .name = "toggle_achievements"},
         {.action = Action::TOGGLE_SKILLS, .name = "toggle_skills"},
         {.action = Action::TOGGLE_PVP, .name = "toggle_pvp"},
+        {.action = Action::TOGGLE_AUTORUN, .name = "toggle_autorun"},
     };
 
     for (const auto& [action, nameStr] : actionMap) {
@@ -370,6 +377,8 @@ void KeybindingManager::saveToConfigFile(const std::string& filePath) const {
             keyStr = "Home";
         } else if (key == ImGuiKey_End) {
             keyStr = "End";
+        } else if (key == ImGuiKey_NumLock) {
+            keyStr = "NumLock";
         } else if (key == ImGuiKey_MouseX1) {
             keyStr = "Mouse4";
         } else if (key == ImGuiKey_MouseX2) {

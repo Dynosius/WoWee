@@ -2,6 +2,7 @@
 
 #include "core/gamepad.hpp"
 #include "core/input.hpp"
+#include "ui/keybinding_manager.hpp"
 #include "core/logger.hpp"
 #include "rendering/camera_controller.hpp"
 
@@ -356,6 +357,17 @@ void GamepadControls::applyButtons() {
         if (route.imguiKey != 0 &&
             std::find(imguiWanted.begin(), imguiWanted.end(), route.imguiKey) == imguiWanted.end()) {
             imguiWanted.push_back(route.imguiKey);
+        }
+    }
+
+    // The default pad scheme still names NumLock; send the bound action to ImGui.
+    if (wanted[SDL_SCANCODE_NUMLOCKCLEAR]) {
+        wanted[SDL_SCANCODE_NUMLOCKCLEAR] = false;
+        const auto key = KeybindingManager::getInstance().getKeyForAction(
+            KeybindingManager::Action::TOGGLE_AUTORUN);
+        if (key != ImGuiKey_None &&
+            std::find(imguiWanted.begin(), imguiWanted.end(), key) == imguiWanted.end()) {
+            imguiWanted.push_back(key);
         }
     }
 

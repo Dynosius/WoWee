@@ -2864,13 +2864,11 @@ void CameraController::update(float deltaTime) {
         keyW = keyS = keyA = keyD = keyQ = keyE = nowJump = spaceHeld = false;
     }
 
-    // Tilde or NumLock toggles auto-run; any forward/backward key cancels it
-    bool tildeDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_GRAVE) ||
-                                           input.isKeyPressed(SDL_SCANCODE_NUMLOCKCLEAR));
-    if (tildeDown && !tildeWasDown) {
+    // The same action the keybinding panel rebinds; forward/backward cancels it.
+    if (!uiWantsKeyboard && ui::KeybindingManager::getInstance().isActionPressed(
+            ui::KeybindingManager::Action::TOGGLE_AUTORUN)) {
         autoRunning = !autoRunning;
     }
-    tildeWasDown = tildeDown;
     // Helper: cancel auto-follow and notify game handler
     auto doCancelAutoFollow = [&]() {
         if (autoFollowTarget_) {

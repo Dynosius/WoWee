@@ -31,6 +31,7 @@ public:
         TOGGLE_ACHIEVEMENTS,
         TOGGLE_SKILLS,
         TOGGLE_PVP,
+        TOGGLE_AUTORUN,
         ACTION_COUNT
     };
 
