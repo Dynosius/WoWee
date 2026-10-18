@@ -6,6 +6,7 @@
 #include <cctype>
 #include <fstream>
 #include <filesystem>
+#include <unordered_map>
 #include <vector>
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -124,11 +125,20 @@ ImGuiKey KeybindingManager::keyFromName(const std::string& name) {
     if (name.empty()) return ImGuiKey_None;
     if (name == "MOUSEX1" || name == "MOUSE4") return ImGuiKey_MouseX1;
     if (name == "MOUSEX2" || name == "MOUSE5") return ImGuiKey_MouseX2;
-    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
-        const auto key = static_cast<ImGuiKey>(k);
-        if (keyName(key) == name || upper(ImGui::GetKeyName(key)) == name) return key;
-    }
-    return ImGuiKey_None;
+    // Built once, in the order the linear scan visited, first match winning, so
+    // answers are unchanged. Every binding poll resolves its key through here.
+    static const std::unordered_map<std::string, ImGuiKey> byName = [] {
+        std::unordered_map<std::string, ImGuiKey> map;
+        for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
+            const auto key = static_cast<ImGuiKey>(k);
+            map.emplace(keyName(key), key);
+            map.emplace(upper(ImGui::GetKeyName(key)), key);
+        }
+        map.erase("");
+        return map;
+    }();
+    const auto it = byName.find(name);
+    return it == byName.end() ? ImGuiKey_None : it->second;
 }
 std::string KeybindingManager::mouseButtonNameFromSDL(uint8_t button) {
     switch (button) {

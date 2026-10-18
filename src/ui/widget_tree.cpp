@@ -101,6 +101,7 @@ void WidgetTree::reset() {
     drawOrder_.clear();
     linkRects_.clear();
     scrollFrames_.clear();
+    keyboardFrames_.clear();
     ownedTooltips_.clear();
     portraitsByUnit_.clear();
     portraitUnitOf_.clear();
@@ -193,6 +194,15 @@ void WidgetTree::markScrollFrame(uint32_t id) {
     if (!w || w->isScrollFrame) return;
     w->isScrollFrame = true;
     scrollFrames_.push_back(id);
+}
+
+void WidgetTree::setKeyboardEnabled(uint32_t id, bool enabled) {
+    Widget* w = get(id);
+    if (!w) return;
+    w->keyboardEnabled = enabled;
+    if (!enabled) return;
+    const auto at = std::ranges::lower_bound(keyboardFrames_, id);
+    if (at == keyboardFrames_.end() || *at != id) keyboardFrames_.insert(at, id);
 }
 
 void WidgetTree::setTooltipOwner(uint32_t tooltipId, uint32_t ownerId) {

@@ -4514,7 +4514,9 @@ int lua_Frame_GetChildren(lua_State* L) {
 }
 
 int lua_Frame_EnableKeyboard(lua_State* L) {
-    if (auto* w = widgetOf(L, 1)) w->keyboardEnabled = lua_toboolean(L, 2) != 0;
+    // Through the tree, which indexes keyboard frames for topKeyboardFrame.
+    if (auto* tree = wowee::addons::getWidgetTree(L))
+        tree->setKeyboardEnabled(widgetIdOf(L, 1), lua_toboolean(L, 2) != 0);
     return 0;
 }
 int lua_Frame_IsKeyboardEnabled(lua_State* L) {
@@ -9933,8 +9935,11 @@ LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey, bool down
 /// key goes straight through to the game.
 const ui::Widget* LuaEngine::topKeyboardFrame() const {
     const ui::Widget* best = nullptr;
-    for (size_t id = 1; id < widgets_.size(); ++id) {
-        const ui::Widget* w = widgets_.get(static_cast<uint32_t>(id));
+    // Only the frames that enabled the keyboard, in ascending id order like the
+    // full scan this replaced. Called from every binding poll via the typed-
+    // input probe - dozens of times a frame - so it must not walk the whole tree.
+    for (uint32_t id : widgets_.keyboardFrames()) {
+        const ui::Widget* w = widgets_.get(id);
         if (!w || !w->keyboardEnabled || !w->visible) continue;
         if (!best) { best = w; continue; }
         if (w->effStrata > best->effStrata ||
