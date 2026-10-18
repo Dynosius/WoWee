@@ -9827,7 +9827,8 @@ std::string LuaEngine::bindingCommandForKey(const std::string& key) {
         std::string base = key;
         for (const char* prefix : {"ALT-", "CTRL-", "SHIFT-"})
             if (base.starts_with(prefix)) base.erase(0, std::char_traits<char>::length(prefix));
-        if (base != key) return bindingCommandForKey(base);
+        // Pad chords are explicit assignments: clearing one must leave it inert.
+        if (base != key && !base.starts_with("PAD")) return bindingCommandForKey(base);
     }
     return command;
 }
@@ -9881,9 +9882,13 @@ bool LuaEngine::runBindingScript(const std::string& command, bool down) {
     return true;
 }
 
-LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey) {
+LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey, bool down) {
     PadKeyOutcome outcome;
     if (!L_ || !padKey || !*padKey) return outcome;
+    if (!down) {
+        outcome.taken = dispatchBindingInput(padKey, false, false, false, false);
+        return outcome;
+    }
 
     // The key binding panel, while one of its rows is waiting for a key - and
     // only then. Every other frame that listens for keys is a dialog reading
@@ -9916,7 +9921,7 @@ LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey) {
     // Taken whether or not a script ran. A button bound to a command with no
     // script doing nothing is right; falling back to the default scheme would
     // be the button doing what the player bound it away from.
-    (void)runBindingScript(command, true);
+    (void)dispatchBindingInput(padKey, false, false, false, true);
     outcome.taken = true;
     return outcome;
 }

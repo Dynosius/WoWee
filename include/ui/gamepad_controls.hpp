@@ -3,10 +3,9 @@
 /**
  * gamepad_controls.hpp - what a controller's sticks and buttons mean.
  *
- * The device itself is core/gamepad.hpp. This is the half that decides a push
- * of the left stick is W held down and a press of A is the space bar, and then
- * sends gameplay commands to KeybindingManager. The default scheme and its
- * fallback behavior are unchanged; only the gameplay input sink changed.
+ * The device itself is core/gamepad.hpp. This half sends stick movement and
+ * bound button commands through KeybindingManager; Lua receives binding scripts
+ * and their releases. Unbound gameplay buttons do nothing.
  *
  * Nothing here is platform-specific: SDL resolves a pad on Windows, macOS,
  * Linux and Android to the same Xbox-shaped button set, so the table below is
@@ -38,7 +37,6 @@
 #include <functional>
 #include <string>
 #include <utility>
-#include <set>
 
 namespace wowee {
 namespace rendering { class CameraController; }
@@ -52,7 +50,7 @@ namespace ui {
 /// key binding panel does what that binding says instead.
 struct PadBinding {
     SDL_GamepadButton button;
-    SDL_Scancode key;      ///< what core::Input is told is held
+    SDL_Scancode key;      ///< legacy keyboard equivalent, for display
     const char* what;      ///< what a person reads on the settings panel
     /// The interface's own name for what this does - "ACTIONBUTTON3" - or ""
     /// where there is none.
@@ -64,9 +62,8 @@ struct PadBinding {
     /// second copy of this mapping would be wrong the moment either side
     /// moved.
     ///
-    /// Empty for the three the interface has no command for: the bumper that
-    /// is only a modifier, the button that raises the pointer, and the stick
-    /// click that sits the character down.
+    /// Empty for scheme-only roles such as the bumper's Shift modifier.
+    /// Gameplay actions always have a command and obey the shared bindings.
     const char* command = "";
 };
 
@@ -121,7 +118,7 @@ struct PadBinding {
 /// What the interface made of a pad button, asked once as it goes down.
 struct PadKeyAnswer {
     enum class Kind {
-        Unbound,  ///< nothing is bound to it: the default scheme applies
+        Unbound,  ///< no gameplay command; Back/bumper retain their scheme roles
         Taken,    ///< the interface handled it - a binding being captured, or a script
         Command,  ///< bound to a command the client performs itself
     };
@@ -130,7 +127,7 @@ struct PadKeyAnswer {
 };
 
 /// Looks a pad button's binding name up in the interface.
-using PadKeyRouter = std::function<PadKeyAnswer(const char* padKey)>;
+using PadKeyRouter = std::function<PadKeyAnswer(const char* padKey, bool down)>;
 
 /// A finger on the touchpad, followed from one frame to the next.
 ///
@@ -184,8 +181,8 @@ public:
     /// pointer mode, because there is nowhere to put the cursor.
     void setWindow(SDL_Window* window) { window_ = window; }
 
-    /// Where a button's binding is looked up. Without one, every button keeps
-    /// the default scheme.
+    /// Where button commands and scripts are resolved. Without one, only
+    /// scheme-only roles (Back and the bumper) remain active.
     void setKeyRouter(PadKeyRouter router) { keyRouter_ = std::move(router); }
 
     /// How far the pointer travels this frame for a given push of the stick.
@@ -254,7 +251,7 @@ private:
     static constexpr std::uint8_t kFromStick = 1;
     static constexpr std::uint8_t kFromButtons = 2;
 
-    /// Releases the keys and the ImGui keys this is holding, but not the
+    /// Releases movement, button commands and binding scripts, but not the
     /// pointer's mouse buttons: the touchpad drives those, and it goes on
     /// working where the rest of the pad does not - outside the world, and
     /// while the player is typing.
@@ -269,8 +266,7 @@ private:
     void applyLook(float x, float y, float deltaTime);
     /// The triggers, as notches of the wheel.
     void applyZoom(float in, float out, float deltaTime);
-    /// The buttons: a bound one as its command, the rest as the keys in the
-    /// table.
+    /// Holds each routed button's command; unbound buttons stay inert.
     void applyButtons();
     /// Looks up each button's binding as it goes down, and forgets it as it
     /// comes up.
@@ -325,12 +321,12 @@ private:
     struct ButtonRoute {
         PadKeyAnswer::Kind kind = PadKeyAnswer::Kind::Unbound;
         std::string command;
+        std::string key;  ///< qualified binding name, latched for script release
     };
     std::array<ButtonRoute, SDL_GAMEPAD_BUTTON_COUNT> routes_{};
     /// Which buttons were down last frame, so each press is looked up once.
     std::array<bool, SDL_GAMEPAD_BUTTON_COUNT> buttonWasDown_{};
     PadKeyRouter keyRouter_;
-    std::set<std::string> commandsDown_;
 
     float lookDegreesPerSecond_ = 180.0f;
     /// Left over from a zoom that did not reach a whole notch, so a trigger

@@ -1586,6 +1586,14 @@ void seedBindingDefaults(bool withSaved = true, bool reset = false) {
     };
     seedPad(wowee::ui::padBindings());
     seedPad(wowee::ui::padExtraBindings());
+    // The scheme-only bumper selects editable bottom-left action-bar chords.
+    for (const auto& row : wowee::ui::padBindings()) {
+        if (std::string(row.command).starts_with("ACTIONBUTTON")) {
+            const std::string slot = std::string(row.command).substr(12);
+            auto& keys = bindingKeys()["MULTIACTIONBAR1BUTTON" + slot];
+            if (keys[1].empty()) keys[1] = "SHIFT-" + std::string(wowee::ui::padKeyName(row.button));
+        }
+    }
     if (withSaved) {
         manager.loadBindingsWithLegacy(bindingsFilePath(), wowee::ui::SettingsPanel::getSettingsPath());
     }

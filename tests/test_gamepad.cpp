@@ -124,23 +124,6 @@ TEST_CASE("the scheme reaches the whole action bar") {
     CHECK(hasModifier);
 }
 
-TEST_CASE("the keys the pad holds are ones the client answers") {
-    // The client polls these by scancode. A binding to a key nothing reads is
-    // a button that does nothing, and the table is the only place that would
-    // say so.
-    const auto bindings = wowee::ui::padBindings();
-    const std::set<int> answered = {
-        SDL_SCANCODE_SPACE, SDL_SCANCODE_TAB, SDL_SCANCODE_NUMLOCKCLEAR,
-        SDL_SCANCODE_LSHIFT, SDL_SCANCODE_X,
-        SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3,
-        SDL_SCANCODE_4, SDL_SCANCODE_5, SDL_SCANCODE_6,
-    };
-    for (std::size_t i = 0; i < bindings.size(); ++i) {
-        INFO(bindings[i].what);
-        CHECK(answered.count(static_cast<int>(bindings[i].key)) == 1);
-    }
-}
-
 TEST_CASE("the pointer does not move on its own") {
     const glm::vec2 still = wowee::ui::GamepadControls::pointerStep(0.0f, 0.0f, 0.016f);
     CHECK(still.x == Catch::Approx(0.0f));
@@ -391,32 +374,19 @@ TEST_CASE("binding a button to what the default scheme gave it changes nothing")
     }
 }
 
-TEST_CASE("a row's command and its key say the same thing") {
-    // The scheme's rows now carry the interface's name for what they do, so
-    // that the binding table can be seeded from this one table rather than a
-    // second copy of it. The two halves of a row have to agree: the command
-    // is looked up through padClientKeyFor when the press arrives as a
-    // binding, and if that answers a different key from the one the row
-    // presses directly, the same button does two different things depending
-    // on whether the player has ever opened the Key Bindings panel.
-    const auto check = [](std::span<const wowee::ui::PadBinding> rows) {
-        for (const wowee::ui::PadBinding& row : rows) {
-            const char* command = row.command;
-            if (!command || !*command) continue;
-            INFO(row.what << " is " << command);
-            CHECK(wowee::ui::padClientKeyFor(command) == row.key);
-        }
-    };
-    check(wowee::ui::padBindings());
-    check(wowee::ui::padExtraBindings());
+TEST_CASE("menu and sit defaults seed named commands, not keyboard fallbacks") {
+    std::map<SDL_GamepadButton, std::string> commands;
+    for (const auto& row : wowee::ui::padBindings())
+        commands[row.button] = row.command ? row.command : "";
+    CHECK(commands.at(SDL_GAMEPAD_BUTTON_EAST) == "TOGGLEGAMEMENU");
+    CHECK(commands.at(SDL_GAMEPAD_BUTTON_RIGHT_STICK) == "SITORSTAND");
+    // Escape and B fill the two visible menu slots; Start has no hidden third.
+    CHECK(commands.count(SDL_GAMEPAD_BUTTON_START) == 0);
 }
 
 TEST_CASE("the rows with no command are the ones the interface has no word for") {
-    // Three: the bumper that is only a modifier, the button that raises the
-    // pointer, and the stick click that sits the character down. Everything
-    // else a pad does has a name in the binding table and belongs in it, and
-    // a row that quietly loses its command would vanish from the Key Bindings
-    // panel without anything else noticing.
+    // Only the bumper is a scheme modifier rather than a bindable action.
+    // Back's pointer-mode role is outside this gameplay-default table.
     std::set<int> commandless;
     for (const wowee::ui::PadBinding& row : wowee::ui::padBindings()) {
         if (row.command == nullptr || row.command[0] == '\0') {
@@ -424,8 +394,8 @@ TEST_CASE("the rows with no command are the ones the interface has no word for")
         }
     }
     CHECK(commandless.count(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) == 1);
-    CHECK(commandless.count(SDL_GAMEPAD_BUTTON_RIGHT_STICK) == 1);
-    CHECK(commandless.size() == 2);
+    CHECK(commandless.count(SDL_GAMEPAD_BUTTON_RIGHT_STICK) == 0);
+    CHECK(commandless.size() == 1);
 
     // And every extra has one: a paddle is an action slot and the share
     // button is a screenshot, both of which the interface can name.

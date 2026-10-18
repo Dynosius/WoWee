@@ -2327,6 +2327,14 @@ target_link_libraries(check_binding_migration PRIVATE imgui SDL3::SDL3)
 add_test(NAME binding_migration COMMAND check_binding_migration)
 register_test_target(check_binding_migration)
 
+# Framework-free binding seams compile extracted production bodies with CXX/g++.
+if(Python3_Interpreter_FOUND)
+    add_test(NAME pad_routing
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_pad_routing.py)
+    add_test(NAME pad_defaults
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_pad_defaults.py)
+endif()
+
 # ── test_tab_target ──────────────────────────────────────────
 # Which units Tab and TargetNearestEnemy may pick: hostile and neutral alike,
 # but not friendly units, critters, or units the server marks unselectable,

@@ -280,11 +280,11 @@ bool Application::initialize() {
         // What a button is bound to is the interface's to say, and the
         // interface is built after this - so the router asks for it on each
         // press rather than holding on to it.
-        ui::gamepadControls().setKeyRouter([this](const char* padKey) {
+        ui::gamepadControls().setKeyRouter([this](const char* padKey, bool down) {
             ui::PadKeyAnswer answer;
             auto* engine = addonManager_ ? addonManager_->getLuaEngine() : nullptr;
             if (!engine) return answer;
-            auto outcome = engine->dispatchPadKey(padKey);
+            auto outcome = engine->dispatchPadKey(padKey, down);
             if (outcome.taken) {
                 answer.kind = ui::PadKeyAnswer::Kind::Taken;
             } else if (!outcome.command.empty()) {

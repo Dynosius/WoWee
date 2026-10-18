@@ -11,9 +11,8 @@ namespace ui {
 namespace {
 
 // The scheme. Read down the list and it is the whole of what a pad's buttons
-// do, apart from Escape - which is on B and on Start, and goes through ImGui
-// rather than through a scancode, because that is where the interface reads
-// it.
+// do. Escape keeps its keyboard slot and B gets the second menu slot; Start
+// is deliberately unassigned rather than hiding a third binding.
 //
 // On its own in this file, and not beside the code that applies it, so that a
 // test can check the table without linking the camera and ImGui behind it. It
@@ -21,6 +20,7 @@ namespace {
 // a key, is every key one the client actually polls - are questions about the
 // data alone.
 constexpr PadBinding kBindings[] = {
+    {SDL_GAMEPAD_BUTTON_EAST, SDL_SCANCODE_ESCAPE, "Close a window, or the game menu", "TOGGLEGAMEMENU"},
     {SDL_GAMEPAD_BUTTON_SOUTH,             SDL_SCANCODE_SPACE,        "Jump", "JUMP"},
     {SDL_GAMEPAD_BUTTON_WEST,             SDL_SCANCODE_1,            "Action 1", "ACTIONBUTTON1"},
     {SDL_GAMEPAD_BUTTON_NORTH,             SDL_SCANCODE_2,            "Action 2", "ACTIONBUTTON2"},
@@ -38,7 +38,7 @@ constexpr PadBinding kBindings[] = {
     // The last button every pad has and nothing was using. X sits the
     // character down, and dives while swimming - both of them things a
     // keyboard could do and a controller could not reach at all.
-    {SDL_GAMEPAD_BUTTON_RIGHT_STICK,    SDL_SCANCODE_X,            "Sit down, or dive"},
+    {SDL_GAMEPAD_BUTTON_RIGHT_STICK,    SDL_SCANCODE_X,            "Sit down, or dive", "SITORSTAND"},
 };
 
 }  // namespace
@@ -200,6 +200,7 @@ SDL_Scancode padClientKeyFor(const std::string& command) {
         {"STRAFELEFT",         SDL_SCANCODE_Q},
         {"STRAFERIGHT",        SDL_SCANCODE_E},
         {"JUMP",               SDL_SCANCODE_SPACE},
+        {"SITORSTAND",         SDL_SCANCODE_X},
         {"TOGGLEAUTORUN",      SDL_SCANCODE_NUMLOCKCLEAR},
         {"TARGETNEARESTENEMY", SDL_SCANCODE_TAB},
         {"SCREENSHOT",         SDL_SCANCODE_PRINTSCREEN},

@@ -222,7 +222,7 @@ public:
         bool taken = false;   ///< the panel captured it, or a binding script ran
         std::string command;  ///< a command the client performs itself, else empty
     };
-    PadKeyOutcome dispatchPadKey(const char* padKey);
+    PadKeyOutcome dispatchPadKey(const char* padKey, bool down = true);
     bool keyboardFrameHasFocus() const { return topKeyboardFrame() != nullptr; }
     /// Whether an edit box currently has focus, so the client knows not to
     /// treat the same keystrokes as movement.
