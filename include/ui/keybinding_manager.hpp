@@ -77,7 +77,6 @@ public:
      * Get the currently bound key for an action.
      */
     [[nodiscard]] ImGuiKey getKeyForAction(Action action) const;
-    [[nodiscard]] ImGuiKey getDefaultKeyForAction(Action action) const;
 
     /**
      * Rebind an action to a different key.
@@ -98,11 +97,6 @@ public:
      * Save keybindings to config file.
      */
     void saveToConfigFile(const std::string& filePath) const;
-
-    /**
-     * Get human-readable name for an action.
-     */
-    static const char* getActionName(Action action);
 
     /**
      * Get all actions for iteration.

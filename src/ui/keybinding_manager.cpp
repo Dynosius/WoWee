@@ -53,10 +53,6 @@ const char* KeybindingManager::commandForAction(Action action) {
     const auto i = static_cast<size_t>(action);
     return i < std::size(actions) ? actions[i].command : "";
 }
-const char* KeybindingManager::getActionName(Action action) {
-    const auto i = static_cast<size_t>(action);
-    return i < std::size(actions) ? actions[i].label : "Unknown";
-}
 void KeybindingManager::initializeDefaults() {
     for (const auto& action : actions) bindings_[action.command] = {action.key, ""};
     const Bindings defaults = {
@@ -387,7 +383,6 @@ ImGuiKey KeybindingManager::getKeyForAction(Action action) const {
     const auto it = bindings_.find(commandForAction(action));
     return it == bindings_.end() ? ImGuiKey_None : keyFromName(it->second[0].empty() ? it->second[1] : it->second[0]);
 }
-ImGuiKey KeybindingManager::getDefaultKeyForAction(Action action) const { return KeybindingManager{}.getKeyForAction(action); }
 void KeybindingManager::setKeyForAction(Action action, ImGuiKey key) {
     const std::string command = commandForAction(action);
     bindings_[command] = {};
