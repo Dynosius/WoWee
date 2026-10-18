@@ -2,6 +2,7 @@
 
 #include "core/gamepad.hpp"
 #include "core/input.hpp"
+#include "ui/keybinding_manager.hpp"
 #include "core/logger.hpp"
 #include "rendering/camera_controller.hpp"
 
@@ -11,7 +12,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <utility>
-#include <vector>
 
 namespace wowee {
 namespace ui {
@@ -68,12 +68,12 @@ void GamepadControls::releaseKeys() {
         heldKeys_[i] = 0;
         core::Input::getInstance().setVirtualKey(static_cast<SDL_Scancode>(i), false);
     }
-    if (escapeDown_) {
-        ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, false);
-        escapeDown_ = false;
-    }
-    for (int key : imguiKeysDown_) ImGui::GetIO().AddKeyEvent(static_cast<ImGuiKey>(key), false);
-    imguiKeysDown_.clear();
+    auto& bindings = KeybindingManager::getInstance();
+    for (const char* command : {"MOVEFORWARD", "MOVEBACKWARD", "STRAFELEFT", "STRAFERIGHT"})
+        bindings.setVirtualCommand(command, "pad-stick", false);
+    for (const auto& command : commandsDown_)
+        bindings.setVirtualCommand(command, "pad-buttons", false);
+    commandsDown_.clear();
     // Forgotten as well as released, so a button still held when the pad is
     // live again is looked up afresh rather than answered from before.
     routes_.fill(ButtonRoute{});
@@ -113,6 +113,11 @@ void GamepadControls::applyMovement(float x, float y) {
     holdKey(SDL_SCANCODE_S, back, kFromStick);
     holdKey(SDL_SCANCODE_Q, left, kFromStick);
     holdKey(SDL_SCANCODE_E, right, kFromStick);
+    auto& bindings = KeybindingManager::getInstance();
+    bindings.setVirtualCommand("MOVEFORWARD", "pad-stick", forward);
+    bindings.setVirtualCommand("MOVEBACKWARD", "pad-stick", back);
+    bindings.setVirtualCommand("STRAFELEFT", "pad-stick", left);
+    bindings.setVirtualCommand("STRAFERIGHT", "pad-stick", right);
 
     // Facing follows the camera while the stick is pushed, which is what the
     // right mouse button does on a desktop. Without it the character walks
@@ -268,119 +273,61 @@ void GamepadControls::routeButtons() {
     const auto& pad = core::gamepad();
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
         const auto button = static_cast<SDL_GamepadButton>(b);
-        const auto i = static_cast<std::size_t>(b);
+        const size_t i = static_cast<size_t>(b);
         const bool down = pad.held(button);
         const bool wasDown = buttonWasDown_[i];
         buttonWasDown_[i] = down;
         if (!down) {
-            routes_[i] = ButtonRoute{};
+            routes_[i] = {};
             continue;
         }
-        if (wasDown || !keyRouter_) continue;
         const char* name = padKeyName(button);
-        if (name[0] == '\0') continue;
-
-        // Asked once, on the press. The interface may take the press outright
-        // - the key binding panel capturing it, or a binding script - and then
-        // nothing here acts on it.
-        const PadKeyAnswer answer = keyRouter_(name);
-        ButtonRoute route;
-        route.kind = answer.kind;
-        if (answer.kind == PadKeyAnswer::Kind::Command) {
-            route.key = padClientKeyFor(answer.command);
-            route.imguiKey = answer.imguiKey;
-            route.escape = answer.command == "TOGGLEGAMEMENU";
-            if (route.key == SDL_SCANCODE_UNKNOWN && route.imguiKey == 0 && !route.escape) {
-                // Bound to something the client does without a key it polls -
-                // opening chat, sheathing. The press does nothing rather than
-                // falling back to the default scheme, which would be the
-                // button doing what the player just bound it away from.
-                LOG_WARNING("Gamepad: ", name, " is bound to ", answer.command,
-                            ", which a controller cannot trigger yet");
-            }
-        }
-        routes_[i] = route;
+        if (wasDown || !keyRouter_ || !*name) continue;
+        const auto answer = keyRouter_(name);
+        routes_[i].kind = answer.kind;
+        routes_[i].command = answer.command;
     }
 }
 
 void GamepadControls::applyButtons() {
     const auto& pad = core::gamepad();
-    // Worked out whole before any key is held, because two buttons can want
-    // the same key - X by default, and a D-pad bound to ACTIONBUTTON1 - and
-    // one of them letting go must not release the other.
-    std::array<bool, SDL_SCANCODE_COUNT> wanted{};
-    for (const PadBinding& row : padBindings()) {
-        // A and X are the pointer's two clicks while it is up. Jumping and
-        // casting from the same press would fire a spell at whatever was
-        // under the cursor every time a window was clicked.
-        if (pointerMode_ && (row.button == SDL_GAMEPAD_BUTTON_SOUTH ||
-                             row.button == SDL_GAMEPAD_BUTTON_WEST)) {
-            continue;
+    const auto pointerClick = [this](SDL_GamepadButton button) {
+        return pointerMode_ && (button == SDL_GAMEPAD_BUTTON_SOUTH || button == SDL_GAMEPAD_BUTTON_WEST);
+    };
+    const auto mods = SDL_GetModState();
+    const bool shift = schemeHeld(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) || (mods & SDL_KMOD_SHIFT);
+    const bool ctrl = (mods & SDL_KMOD_CTRL) != 0;
+    std::set<std::string> wanted;
+    const auto want = [&](std::string command) {
+        if (command.starts_with("ACTIONBUTTON")) {
+            const auto slot = command.substr(12);
+            if (ctrl) {
+                if (slot.size() != 1 || slot[0] < '1' || slot[0] > '8') return;
+                command = "SHAPESHIFTBUTTON" + slot;
+            } else if (shift) command = "MULTIACTIONBAR1BUTTON" + slot;
+        } else if (command == "SCREENSHOT" && shift) command = "WOWEETOGGLERECORDING";
+        if (!command.empty()) wanted.insert(std::move(command));
+    };
+    // ponytail: retain the old scheme/fallback; only replace its retired
+    // scancode/ImGui gameplay sinks. Editable pad chords belong in a later PR.
+    for (const auto rows : {padBindings(), padExtraBindings()}) {
+        for (const auto& row : rows) {
+            if (schemeHeld(row.button) && !pointerClick(row.button)) want(row.command);
         }
-        if (schemeHeld(row.button)) wanted[static_cast<std::size_t>(row.key)] = true;
     }
-
-    // The paddles and the share button, on the pads that have them. No test
-    // for whether this pad does: a button it has not got is never held, and
-    // asking SDL once a frame per button to learn the same thing is work for
-    // nothing. The listing in the settings panel asks, because a row there is
-    // a promise.
-    for (const PadBinding& row : padExtraBindings()) {
-        if (schemeHeld(row.button)) wanted[static_cast<std::size_t>(row.key)] = true;
-    }
-
-    // Escape is the interface's, not the game's: it is read through
-    // KeybindingManager, which asks ImGui. A virtual scancode never reaches
-    // it, so this one goes on ImGui's own queue - once down, once up, because
-    // ImGui counts the repeats itself.
-    bool escape = schemeHeld(SDL_GAMEPAD_BUTTON_EAST) || schemeHeld(SDL_GAMEPAD_BUTTON_START);
-    // The panels KeybindingManager answers ask ImGui too, for the same reason.
-    std::vector<int> imguiWanted;
-
+    if (schemeHeld(SDL_GAMEPAD_BUTTON_RIGHT_STICK)) want("SITORSTAND");
+    if (schemeHeld(SDL_GAMEPAD_BUTTON_EAST) || schemeHeld(SDL_GAMEPAD_BUTTON_START)) want("TOGGLEGAMEMENU");
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
+        const auto& route = routes_[static_cast<size_t>(b)];
         const auto button = static_cast<SDL_GamepadButton>(b);
-        // The pointer's two clicks outrank whatever the button is bound to,
-        // for as long as the pointer is up. A and X are the click and the
-        // right click there, and the defaults now sit in the binding table
-        // like any other binding - so without this, raising the pointer and
-        // clicking would jump and cast as well.
-        if (pointerMode_ && (button == SDL_GAMEPAD_BUTTON_SOUTH ||
-                             button == SDL_GAMEPAD_BUTTON_WEST)) {
-            continue;
-        }
-        const ButtonRoute& route = routes_[static_cast<std::size_t>(b)];
-        if (route.kind != PadKeyAnswer::Kind::Command) continue;
-        if (!pad.held(button)) continue;
-        if (route.key != SDL_SCANCODE_UNKNOWN) wanted[static_cast<std::size_t>(route.key)] = true;
-        if (route.escape) escape = true;
-        if (route.imguiKey != 0 &&
-            std::find(imguiWanted.begin(), imguiWanted.end(), route.imguiKey) == imguiWanted.end()) {
-            imguiWanted.push_back(route.imguiKey);
-        }
+        if (route.kind == PadKeyAnswer::Kind::Command && pad.held(button) && !pointerClick(button))
+            want(route.command);
     }
-
-    for (std::size_t k = 0; k < wanted.size(); ++k) {
-        if (!wanted[k] && (heldKeys_[k] & kFromButtons) == 0) continue;
-        holdKey(static_cast<SDL_Scancode>(k), wanted[k], kFromButtons);
-    }
-
-    if (escape != escapeDown_) {
-        ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, escape);
-        escapeDown_ = escape;
-    }
-
-    ImGuiIO& io = ImGui::GetIO();
-    for (int key : imguiKeysDown_) {
-        if (std::find(imguiWanted.begin(), imguiWanted.end(), key) == imguiWanted.end()) {
-            io.AddKeyEvent(static_cast<ImGuiKey>(key), false);
-        }
-    }
-    for (int key : imguiWanted) {
-        if (std::find(imguiKeysDown_.begin(), imguiKeysDown_.end(), key) == imguiKeysDown_.end()) {
-            io.AddKeyEvent(static_cast<ImGuiKey>(key), true);
-        }
-    }
-    imguiKeysDown_ = std::move(imguiWanted);
+    auto& bindings = KeybindingManager::getInstance();
+    for (const auto& command : commandsDown_)
+        if (!wanted.count(command)) bindings.setVirtualCommand(command, "pad-buttons", false);
+    for (const auto& command : wanted) bindings.setVirtualCommand(command, "pad-buttons", true);
+    commandsDown_ = std::move(wanted);
 }
 
 void GamepadControls::update(float deltaTime) {

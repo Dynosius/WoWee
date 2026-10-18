@@ -358,10 +358,6 @@ private:
     float appliedWindowUiScale_ = 1.0f;
     bool windowUiScaleEditing_ = false;
 
-    // Keybinding customization (private - only used in Controls tab)
-    int pendingRebindAction_ = -1;  // -1 = not rebinding, otherwise action index
-    bool awaitingKeyPress_ = false;
-
     // Settings tab rendering
     void renderSettingsInterfaceTab(const std::function<void()>& saveCallback);
     void renderSettingsGameplayTab(const std::function<void()>& saveCallback);

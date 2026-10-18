@@ -201,6 +201,7 @@ public:
     /// its button on the release.
     bool dispatchBindingKey(int sdlKeycode, bool shift, bool ctrl, bool alt,
                             bool down);
+    bool dispatchBindingInput(const std::string& key, bool shift, bool ctrl, bool alt, bool down);
 
     /// The command this key holds, or empty. Whether the client would run it is
     /// a separate question - see clientActsOnBinding - and keeping the two
@@ -222,6 +223,7 @@ public:
         std::string command;  ///< a command the client performs itself, else empty
     };
     PadKeyOutcome dispatchPadKey(const char* padKey);
+    bool keyboardFrameHasFocus() const { return topKeyboardFrame() != nullptr; }
     /// Whether an edit box currently has focus, so the client knows not to
     /// treat the same keystrokes as movement.
     ///
@@ -292,7 +294,7 @@ private:
     ui::WidgetTree widgets_;
     /// runOnUp commands whose key is down, by keycode, so the release reaches
     /// the same command even when a modifier was let go first.
-    std::unordered_map<int, std::string> heldBindings_;
+    std::unordered_map<std::string, std::string> heldBindings_;
     game::GameHandler* gameHandler_ = nullptr;
     LuaServices luaServices_;
     LuaErrorCallback luaErrorCallback_;

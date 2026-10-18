@@ -1,6 +1,7 @@
 #include "ui/touch_controls.hpp"
 
 #include "core/input.hpp"
+#include "ui/keybinding_manager.hpp"
 #include "core/logger.hpp"
 #include "rendering/camera_controller.hpp"
 
@@ -42,15 +43,11 @@ void TouchControls::setInWorld(bool inWorld) {
 }
 
 void TouchControls::setMovementKeys(bool forward, bool back, bool left, bool right) const {
-    auto& input = core::Input::getInstance();
-    input.setVirtualKey(SDL_SCANCODE_W, forward);
-    input.setVirtualKey(SDL_SCANCODE_S, back);
-    // Q and E rather than A and D. With the right button up - which it always
-    // is on a phone - this client turns the character on A and D and strafes on
-    // Q and E. Turning meant the stick swung the view as well as the feet,
-    // which is not what a stick pushed sideways should do.
-    input.setVirtualKey(SDL_SCANCODE_Q, left);
-    input.setVirtualKey(SDL_SCANCODE_E, right);
+    auto& bindings = KeybindingManager::getInstance();
+    bindings.setVirtualCommand("MOVEFORWARD", "touch", forward);
+    bindings.setVirtualCommand("MOVEBACKWARD", "touch", back);
+    bindings.setVirtualCommand("STRAFELEFT", "touch", left);
+    bindings.setVirtualCommand("STRAFERIGHT", "touch", right);
 }
 
 void TouchControls::handleEvent(const SDL_Event& event, int windowWidth, int windowHeight) {

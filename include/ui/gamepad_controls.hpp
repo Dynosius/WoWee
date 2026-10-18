@@ -5,18 +5,8 @@
  *
  * The device itself is core/gamepad.hpp. This is the half that decides a push
  * of the left stick is W held down and a press of A is the space bar, and then
- * says so through the two channels the client already listens on:
- *
- *   core::Input's virtual keys, for everything polled by scancode - movement,
- *   jumping, the action bar, targeting, autorun. The on-screen stick a phone
- *   draws has used them since it was written, which is the proof they carry a
- *   press the whole way: through the movement chain, the animations and the
- *   packets that announce it, with nothing in between knowing where the press
- *   came from.
- *
- *   ImGui's key queue, for the few the interface reads rather than the game -
- *   Escape above all, which goes through KeybindingManager and so through
- *   ImGui::IsKeyPressed. A virtual scancode never reaches it.
+ * sends gameplay commands to KeybindingManager. The default scheme and its
+ * fallback behavior are unchanged; only the gameplay input sink changed.
  *
  * Nothing here is platform-specific: SDL resolves a pad on Windows, macOS,
  * Linux and Android to the same Xbox-shaped button set, so the table below is
@@ -48,7 +38,7 @@
 #include <functional>
 #include <string>
 #include <utility>
-#include <vector>
+#include <set>
 
 namespace wowee {
 namespace rendering { class CameraController; }
@@ -137,9 +127,6 @@ struct PadKeyAnswer {
     };
     Kind kind = Kind::Unbound;
     std::string command;  ///< for Command
-    /// For Command, the ImGui key the client listens on when the command is
-    /// one of KeybindingManager's panels; 0 otherwise.
-    int imguiKey = 0;
 };
 
 /// Looks a pad button's binding name up in the interface.
@@ -337,20 +324,13 @@ private:
     /// until it comes up - a binding changed mid-press applies from the next.
     struct ButtonRoute {
         PadKeyAnswer::Kind kind = PadKeyAnswer::Kind::Unbound;
-        SDL_Scancode key = SDL_SCANCODE_UNKNOWN;  ///< a command the client polls by scancode
-        int imguiKey = 0;                          ///< a command the client reads through ImGui
-        bool escape = false;                       ///< the game menu, which has a chain of its own
+        std::string command;
     };
     std::array<ButtonRoute, SDL_GAMEPAD_BUTTON_COUNT> routes_{};
     /// Which buttons were down last frame, so each press is looked up once.
     std::array<bool, SDL_GAMEPAD_BUTTON_COUNT> buttonWasDown_{};
-    /// The ImGui keys routed buttons are holding, released as they let go.
-    std::vector<int> imguiKeysDown_;
     PadKeyRouter keyRouter_;
-
-    /// Whether the interface's Escape is currently down, so the press and the
-    /// release are each sent once. ImGui counts repeats itself.
-    bool escapeDown_ = false;
+    std::set<std::string> commandsDown_;
 
     float lookDegreesPerSecond_ = 180.0f;
     /// Left over from a zoom that did not reach a whole notch, so a trigger

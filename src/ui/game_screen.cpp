@@ -1347,87 +1347,13 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
     auto& io = ImGui::GetIO();
     auto& input = core::Input::getInstance();
 
-    // If the user is typing (or about to focus chat this frame), do not allow
-    // A-Z or 1-0 shortcuts to fire.
-    // Enter and slash open the chat box. Which chat box depends on who owns it.
-    //
-    // These reached this client's panel unconditionally, and its render is
-    // gated on the same ownership - so with the chat handed over they set a
-    // focus flag on a panel that is never drawn, and the interface's own edit
-    // box stayed shut. There was no other way in: FrameXML's OPENCHAT and
-    // OPENCHATSLASH bindings are not in this client's route table, so with the
-    // chat owned there was no key at all that opened it.
-    //
-    // The keystrokes that follow do need a guard, and the reason they were
-    // thought not to is worth keeping: the application's key loop does hand
-    // FrameXML's focused box every press and stop there - but only on the
-    // event path. What is below reads the key state directly, once a frame,
-    // and a poll never went through that loop to be stopped by it. So typing
-    // did walk the character and did fire bindings, and the one question both
-    // paths now ask is interfaceTakingTypedInput.
-    if (!io.WantTextInput && !interfaceTakingTypedInput() &&
-        input.isKeyJustPressed(SDL_SCANCODE_SLASH)) {
+    auto& bindings = KeybindingManager::getInstance();
+    if (bindings.isCommandPressed("OPENCHATSLASH")) {
         gameHandler.runInterfaceCommand("ChatFrame_OpenChat(\"/\")");
-        // The box now holds the slash; the keypress that put it there is still
-        // on its way as a text event.
         noteChatOpenedBySlash();
     }
-    // The same one line as Escape, for the same reason: the chain reads sound
-    // and the key does nothing, so what is wanted is which branch ran. The
-    // guards are reported too, because being refused before the branch is the
-    // likeliest answer and is the one that leaves no other trace.
-    if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_CHAT, false)) {
-        if (io.WantTextInput || interfaceTakingTypedInput() ||
-            interfaceConsumedKey(ImGuiKey_Enter)) {
-            LOG_WARNING("Chat key: refused - ImGui wants text: ",
-                     io.WantTextInput ? "yes" : "no",
-                     ", the interface's box has focus: ",
-                     interfaceTakingTypedInput() ? "yes" : "no",
-                     ", the interface's box already took this press: ",
-                     interfaceConsumedKey(ImGuiKey_Enter) ? "yes" : "no");
-        } else {
-            LOG_WARNING("Chat key: opening the interface's box");
-        }
-    }
-    // The interface's box gets this press first when it has focus, and Enter
-    // is where it says it is done: ChatEdit_OnEnterPressed sends the line and
-    // ends in ChatEdit_OnEscapePressed, which hides the box. That is also what
-    // clears the focus this poll's guard reads - so the press that sent the
-    // message opened the box again behind it.
-    //
-    // Read both ways round, because the binding alone was not opening it.
-    //
-    // Slash has always come from this client's own input layer and has always
-    // worked; Enter came only from the keybinding, which ends in
-    // ImGui::IsKeyPressed - and in the world that never answered true, so there
-    // was no key that opened the box and typing began at a slash. The binding
-    // stays first so a rebound key still works; the direct read is what makes
-    // the default one work at all.
-    const bool enterPressed = input.isKeyJustPressed(SDL_SCANCODE_RETURN) ||
-                              input.isKeyJustPressed(SDL_SCANCODE_KP_ENTER);
-    // Said once, because the two disagreeing is the fault above and it is
-    // otherwise invisible: the binding refuses silently and the log's existing
-    // line is inside the branch that never runs.
-    if (enterPressed &&
-        !KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_CHAT, false)) {
-        static bool said = false;
-        if (!said) {
-            said = true;
-            LOG_WARNING("Enter reached this client's input but not the "
-                        "TOGGLE_CHAT binding - ImGui wants text: ",
-                        io.WantTextInput ? "yes" : "no",
-                        ", the interface's box has focus: ",
-                        interfaceTakingTypedInput() ? "yes" : "no",
-                        ", it already took this press: ",
-                        interfaceConsumedKey(ImGuiKey_Enter) ? "yes" : "no");
-        }
-    }
-    if (!io.WantTextInput &&
-        !interfaceConsumedKey(ImGuiKey_Enter) &&
-        (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_CHAT, false) ||
-         (enterPressed && !interfaceTakingTypedInput()))) {
+    if (bindings.isCommandPressed("OPENCHAT"))
         gameHandler.runInterfaceCommand("ChatFrame_OpenChat(\"\")");
-    }
 
     // Anything at all is taking typed input: this client's chat box, an ImGui
     // field, or one of the interface's own edit boxes.
@@ -1452,56 +1378,11 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
         // changed the player's target on every press.
         if (!textFocus &&
             !interfaceConsumedKey(ImGuiKey_Tab) &&
-            input.isKeyJustPressed(SDL_SCANCODE_TAB)) {
+            bindings.isCommandPressed("TARGETNEARESTENEMY")) {
             const auto& movement = gameHandler.getMovementInfo();
             gameHandler.tabTarget(movement.x, movement.y, movement.z);
         }
 
-        // Escape (TOGGLE_SETTINGS) must not fire while chat input is active -
-        // otherwise pressing Escape to close chat also closes any open window or
-        // opens the escape menu, since ImGui deactivates InputText on Escape but
-        // the same press still propagates here. KeybindingManager only blocks
-        // A-Z/0-9 during text input, not Escape.
-        // Said out loud, at info, because this chain has now been read end to
-        // end five times without the fault appearing in it. Every link checks
-        // out on paper and the key still does nothing, which means the answer
-        // is which branch actually runs - and that is the one thing reading
-        // cannot tell you. One line per press, invisible unless someone asks
-        // for info, and it names the branch rather than the key.
-        //
-        // Asked of the key rather than of the binding, deliberately. The
-        // binding declines to fire while either interface is taking typed
-        // input, so routing this through it means a press that was swallowed
-        // for that reason produces no line - which reads exactly like a press
-        // that never arrived, and those are the two remaining explanations.
-        // Every press of the bound key now says something.
-        const ImGuiKey escapeKey = KeybindingManager::getInstance().getKeyForAction(
-            KeybindingManager::Action::TOGGLE_SETTINGS);
-        const bool escapePressed =
-            escapeKey != ImGuiKey_None && ImGui::IsKeyPressed(escapeKey, true);
-        // Nothing bound is its own explanation and looks identical to every
-        // other one from a log: no line at all. The keybindings are read from a
-        // config file that can rebind or clear this, and setKeyForAction turns
-        // a movement key into ImGuiKey_None outright - so "the action has no
-        // key" is a state the client can genuinely be in, and it would make
-        // Escape do nothing while every branch below remains correct.
-        //
-        // Said once rather than per frame, since it is a fact about the
-        // configuration and not about a press.
-        if (escapeKey == ImGuiKey_None) {
-            static bool saidUnbound = false;
-            if (!saidUnbound) {
-                saidUnbound = true;
-                LOG_WARNING("Escape: nothing is bound to the game-menu action, "
-                            "so no press can reach the chain");
-            }
-        }
-        if (escapePressed && textFocus) {
-            LOG_WARNING("Escape: swallowed before the chain - ",
-                     "ImGui wants text: ", io.WantTextInput ? "yes" : "no",
-                     ", the interface's box has focus: ",
-                     interfaceTakingTypedInput() ? "yes" : "no");
-        }
         if (!textFocus &&
             KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_SETTINGS, true)) {
             // Gathered, then decided, then done - rather than decided while
@@ -1689,12 +1570,12 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 gameHandler.runInterfaceCommand("OpenAllBags()");
             }
 
-            if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_NAMEPLATES)) {
+            if ((bindings.isCommandPressed("NAMEPLATES") || bindings.isCommandPressed("FRIENDNAMEPLATES"))) {
                 // Through the setter and saved, like the panel's boxes. Both
                 // are bound to CVars, and the store is applied over the
                 // settings file at start-up - flipped here alone, the choice
                 // lasted until the client was closed.
-                const bool friendly = ImGui::GetIO().KeyShift;
+                const bool friendly = bindings.isCommandPressed("FRIENDNAMEPLATES");
                 const bool shown = friendly ? settingsPanel_.showFriendlyNameplates_
                                             : settingsPanel_.showEnemyNameplates_;
                 settingsPanel_.setSettingValue(friendly ? "friendlyplates" : "enemyplates",
@@ -1752,60 +1633,28 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
                 gameHandler.runInterfaceCommand("TogglePVPFrame()");
             }
 
-            // Screenshot (PrintScreen key), and with Shift held, start or
-            // stop a recording.
-            if (input.isKeyJustPressed(SDL_SCANCODE_PRINTSCREEN)) {
-                if (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT)) {
-                    toggleRecording();
-                } else {
-                    takeScreenshot();
-                }
-            }
+            if (bindings.isCommandPressed("SCREENSHOT")) takeScreenshot();
+            if (bindings.isCommandPressed("WOWEETOGGLERECORDING")) toggleRecording();
 
-            // Action bar keys (1-9, 0, -, =)
-            static const SDL_Scancode actionBarKeys[] = {
-                SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4,
-                SDL_SCANCODE_5, SDL_SCANCODE_6, SDL_SCANCODE_7, SDL_SCANCODE_8,
-                SDL_SCANCODE_9, SDL_SCANCODE_0, SDL_SCANCODE_MINUS, SDL_SCANCODE_EQUALS
-            };
-            const bool shiftDown = input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT);
-            const bool ctrlDown  = input.isKeyPressed(SDL_SCANCODE_LCTRL)  || input.isKeyPressed(SDL_SCANCODE_RCTRL);
+            const auto forms = game::knownShapeshiftForms(
+                gameHandler.getPlayerClass(), gameHandler.getKnownSpells());
+            for (int i = 0; i < static_cast<int>(forms.size()) && i < 8; ++i)
+                if (bindings.isCommandPressed("SHAPESHIFTBUTTON" + std::to_string(i + 1)))
+                    gameHandler.castSpell(forms[i].spellId);
+
             const auto& bar = gameHandler.getActionBar();
-
-            // Ctrl+1..Ctrl+8 → switch stance/form/presence (WoW default bindings).
-            // Only fires for classes that use a stance bar; same slot ordering as
-            // renderStanceBar: Warrior, DK, Druid, Rogue, Priest.
-            if (ctrlDown) {
-                // The list the bar is drawn from, so key N presses the form
-                // in position N rather than the Nth of a differently ordered
-                // table - which is what a second copy of these forms caused.
-                const auto forms = game::knownShapeshiftForms(
-                    gameHandler.getPlayerClass(), gameHandler.getKnownSpells());
-                if (!forms.empty()) {
-                    std::vector<uint32_t> avail;
-                    avail.reserve(forms.size());
-                    for (const auto& form : forms) avail.push_back(form.spellId);
-                    // Ctrl+1 = first stance, Ctrl+2 = second, …
-                    for (int i = 0; i < static_cast<int>(avail.size()) && i < 8; ++i) {
-                        if (input.isKeyJustPressed(actionBarKeys[i]))
-                            gameHandler.castSpell(avail[i]);
-                    }
-                }
-            }
-
             for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i) {
-                if (!ctrlDown && input.isKeyJustPressed(actionBarKeys[i])) {
-                    int slotIdx = shiftDown
-                        ? ActionBarPanel::actionSlotForPage(ActionBarPanel::kBottomLeftActionPage, i)
-                        : ActionBarPanel::actionSlotForPage(actionBarPanel_.getMainActionBarPage(), i);
-                    if (bar[slotIdx].type == game::ActionBarSlot::SPELL && bar[slotIdx].isReady()) {
-                        uint64_t target = gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0;
-                        gameHandler.castSpell(bar[slotIdx].id, target);
-                    } else if (bar[slotIdx].type == game::ActionBarSlot::ITEM && bar[slotIdx].id != 0) {
-                        gameHandler.useItemById(bar[slotIdx].id);
-                    } else if (bar[slotIdx].type == game::ActionBarSlot::MACRO) {
-                        chatPanel_.executeMacroText(gameHandler, gameHandler.getMacroText(bar[slotIdx].id));
-                    }
+                const bool main = bindings.isCommandPressed("ACTIONBUTTON" + std::to_string(i + 1));
+                const bool bottom = bindings.isCommandPressed("MULTIACTIONBAR1BUTTON" + std::to_string(i + 1));
+                if (!main && !bottom) continue;
+                const int page = bottom ? ActionBarPanel::kBottomLeftActionPage : actionBarPanel_.getMainActionBarPage();
+                const int slot = ActionBarPanel::actionSlotForPage(page, i);
+                if (bar[slot].type == game::ActionBarSlot::SPELL && bar[slot].isReady()) {
+                    gameHandler.castSpell(bar[slot].id, gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0);
+                } else if (bar[slot].type == game::ActionBarSlot::ITEM && bar[slot].id != 0) {
+                    gameHandler.useItemById(bar[slot].id);
+                } else if (bar[slot].type == game::ActionBarSlot::MACRO) {
+                    chatPanel_.executeMacroText(gameHandler, gameHandler.getMacroText(bar[slot].id));
                 }
             }
         }

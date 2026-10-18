@@ -289,7 +289,6 @@ bool Application::initialize() {
                 answer.kind = ui::PadKeyAnswer::Kind::Taken;
             } else if (!outcome.command.empty()) {
                 answer.kind = ui::PadKeyAnswer::Kind::Command;
-                answer.imguiKey = addons::clientImGuiKeyForBinding(outcome.command);
                 answer.command = std::move(outcome.command);
             }
             return answer;
@@ -533,7 +532,7 @@ bool Application::initialize() {
             [this]() -> bool {
                 if (!addonManager_ || !addonsLoaded_) return false;
                 auto* engine = addonManager_->getLuaEngine();
-                return engine != nullptr && engine->editBoxHasFocus();
+                return engine != nullptr && (engine->editBoxHasFocus() || engine->keyboardFrameHasFocus());
             });
         addons::LuaServices luaSvc;
         luaSvc.window            = window.get();
@@ -1424,6 +1423,7 @@ void Application::run() {
         // ever describes the iteration it was set in: the pump sets it and
         // the draw, further down this same iteration, is the only reader.
         ui::clearInterfaceConsumedKeys();
+        ui::KeybindingManager::getInstance().beginInputFrame();
         ui::ageChatSlashEcho();
 
         // Ask for text input while one of the interface's edit boxes has the
@@ -1470,7 +1470,14 @@ void Application::run() {
             // The map window's own events stop here. A click on the map is not
             // a click on the world behind the game's window, and neither the
             // interface nor the camera may act on it.
+            // The map forwards keyboard input but consumes its window events.
+            // Observe focus first so forwarded keys can resume after a map focus gain.
+            const bool focusEvent = event.type == SDL_EVENT_WINDOW_FOCUS_LOST ||
+                                    event.type == SDL_EVENT_WINDOW_FOCUS_GAINED;
+            if (focusEvent) ui::KeybindingManager::getInstance().processInputEvent(event);
             if (mapWindow_ && mapWindow_->handleEvent(event)) continue;
+
+            if (!focusEvent) ui::KeybindingManager::getInstance().processInputEvent(event);
 
             // Connected and disconnected, which is all the pad needs from the
             // queue - its sticks and buttons are sampled once a frame rather
@@ -1515,8 +1522,23 @@ void Application::run() {
                 uiManager->processEvent(event);
             }
 
+            // Mouse bindings use the same command lookup as keyboard bindings.
+            // Releases still reach scripts after the pointer enters a UI frame.
+            bool pointerBindingTaken = false;
+            if (state == AppState::IN_GAME && addonManager_ && addonManager_->getLuaEngine() &&
+                (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP)) {
+                const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+                if (!down || (!ImGui::GetIO().WantCaptureMouse && !ui::frameXmlOwnsMouse())) {
+                    const auto mods = SDL_GetModState();
+                    pointerBindingTaken = addonManager_->getLuaEngine()->dispatchBindingInput(
+                        ui::KeybindingManager::mouseButtonNameFromSDL(event.button.button),
+                        (mods & SDL_KMOD_SHIFT) != 0, (mods & SDL_KMOD_CTRL) != 0,
+                        (mods & SDL_KMOD_ALT) != 0, down);
+                }
+            }
+
             // Pass mouse events to camera controller (skip when UI has mouse focus)
-            if (renderer && renderer->getCameraController() && !ImGui::GetIO().WantCaptureMouse) {
+            if (renderer && renderer->getCameraController() && !ImGui::GetIO().WantCaptureMouse && !pointerBindingTaken) {
                 if (event.type == SDL_EVENT_MOUSE_MOTION) {
                     renderer->getCameraController()->processMouseMotion(event.motion);
                 }
@@ -1541,9 +1563,28 @@ void Application::run() {
                             mio.MousePos.x, mio.DisplaySize.y - mio.MousePos.y,
                             wheelClicks(event.wheel.y, event.wheel.timestamp));
                     }
-                    if (!takenByUi) {
-                        renderer->getCameraController()->processMouseWheel(
-                            static_cast<float>(event.wheel.y));
+                    if (!takenByUi && addonManager_ && addonManager_->getLuaEngine() && state == AppState::IN_GAME) {
+                        const auto mods = SDL_GetModState();
+                        const bool shift = (mods & SDL_KMOD_SHIFT) != 0;
+                        const bool ctrl = (mods & SDL_KMOD_CTRL) != 0;
+                        const bool alt = (mods & SDL_KMOD_ALT) != 0;
+                        const std::string key = event.wheel.y > 0 ? "MOUSEWHEELUP" : "MOUSEWHEELDOWN";
+                        auto& bindings = ui::KeybindingManager::getInstance();
+                        std::string command = bindings.commandForKey(ui::KeybindingManager::modifiedKey(key, shift, ctrl, alt));
+                        if (command.empty()) command = bindings.commandForKey(key);
+                        if (!command.empty() && event.wheel.y != 0) {
+                            if (command == "CAMERAZOOMIN" || command == "CAMERAZOOMOUT") {
+                                // Preserve fractional trackpad travel and the camera's zoom calibration.
+                                if (!ui::interfaceTakingTypedInput() && !ImGui::GetIO().WantTextInput)
+                                    renderer->getCameraController()->processMouseWheel(
+                                        std::abs(event.wheel.y) * (command == "CAMERAZOOMIN" ? 1.0f : -1.0f));
+                            } else {
+                                bindings.setVirtualKey(key, true);
+                                auto* engine = addonManager_->getLuaEngine();
+                                engine->dispatchBindingInput(key, shift, ctrl, alt, true);
+                                engine->dispatchBindingInput(key, shift, ctrl, alt, false);
+                            }
+                        }
                     }
                 }
             }
@@ -1644,7 +1685,7 @@ void Application::run() {
             }
             if (event.type == SDL_EVENT_KEY_UP && addonManager_ && addonsLoaded_) {
                 if (auto* engine = addonManager_->getLuaEngine()) {
-                    engine->dispatchBindingKey(event.key.key, false, false, false, false);
+                    engine->dispatchBindingKey(SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true), false, false, false, false);
                 }
             }
             if (event.type == SDL_EVENT_KEY_DOWN) {
@@ -1654,6 +1695,8 @@ void Application::run() {
                 if (addonManager_ && addonsLoaded_) {
                     if (auto* engine = addonManager_->getLuaEngine();
                         engine && engine->editBoxHasFocus()) {
+                        ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
+                            ui::KeybindingManager::keyNameFromSDL(event.key.key)));
                         // Command counts as control here, because this is the
                         // copy-and-paste modifier and on a Mac that is the one
                         // every other program uses. Windows and Linux send
@@ -1699,7 +1742,9 @@ void Application::run() {
                     // actually takes it, so with nothing up the movement
                     // keys and every binding carry on exactly as before.
                     if (auto* engine = addonManager_->getLuaEngine()) {
-                        if (engine->dispatchFrameKey(event.key.key, true)) {
+                        if (engine->dispatchFrameKey(SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true), true)) {
+                            ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
+                                ui::KeybindingManager::keyNameFromSDL(event.key.key)));
                             // Escape says so, because "Escape does nothing"
                             // is a live report and this is one of the three
                             // ways the press can end before the chain that
@@ -1728,7 +1773,7 @@ void Application::run() {
                     if (auto* engine = addonManager_->getLuaEngine()) {
                         const SDL_Keymod mods = SDL_GetModState();
                         if (engine->dispatchBindingKey(
-                                event.key.key,
+                                SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true),
                                 (mods & SDL_KMOD_SHIFT) != 0,
                                 (mods & SDL_KMOD_CTRL) != 0,
                                 (mods & SDL_KMOD_ALT) != 0, true)) {
@@ -1834,6 +1879,10 @@ void Application::run() {
 
         // Update input
         Input::getInstance().update();
+        if (ui::frameXmlOwnsMouse())
+            for (int key = ImGuiKey_MouseLeft; key <= ImGuiKey_MouseX2; ++key)
+                ui::noteInterfaceConsumedKey(static_cast<ImGuiKey>(key));
+        ui::KeybindingManager::getInstance().updateInput();
 
         // Update application state
         try {
@@ -3728,8 +3777,7 @@ void Application::updateInGame(float deltaTime, const char*& updateCheckpoint) {
     {
         const bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard ||
                                      ui::interfaceTakingTypedInput();
-        auto& input = Input::getInstance();
-        if (!uiWantsKeyboard && input.isKeyJustPressed(SDL_SCANCODE_Z) && appearanceComposer_) {
+        if (!uiWantsKeyboard && ui::KeybindingManager::getInstance().isCommandPressed("TOGGLESHEATH") && appearanceComposer_) {
             if (renderer && renderer->getAnimationController()) {
                 renderer->getAnimationController()->playWeaponSheathAnimation(
                     appearanceComposer_->sheathSpot(game::EquipSlot::MAIN_HAND),
@@ -4835,9 +4883,8 @@ void Application::render() {
                 buttons.left   = ImGui::IsMouseDown(ImGuiMouseButton_Left);
                 buttons.right  = ImGui::IsMouseDown(ImGuiMouseButton_Right);
                 buttons.middle = ImGui::IsMouseDown(ImGuiMouseButton_Middle);
-                // ImGui has no X1/X2 enum names; its SDL3 backend maps them to 3/4.
-                buttons.button4 = ImGui::IsMouseDown(3);
-                buttons.button5 = ImGui::IsMouseDown(4);
+                buttons.button4 = ImGui::IsKeyDown(ImGuiKey_MouseX1);
+                buttons.button5 = ImGui::IsKeyDown(ImGuiKey_MouseX2);
                 engine->dispatchMouse(io.MousePos.x, io.MousePos.y,
                                       io.DisplaySize.y, buttons);
 

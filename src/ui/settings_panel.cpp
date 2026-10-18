@@ -157,9 +157,9 @@ void SettingsPanel::renderSettingsGameplayTab(const std::function<void()>& saveC
             if (!core::gamepad().hasButton(row.button)) continue;
             listRow(row);
         }
-        ImGui::BulletText("%s or %s: close a window, or the game menu",
-                          padButtonLabel(SDL_GAMEPAD_BUTTON_EAST, kind),
-                          padButtonLabel(SDL_GAMEPAD_BUTTON_START, kind));
+        ImGui::BulletText("%s: unassigned by default (menu keeps Escape and %s; two binding slots)",
+                          padButtonLabel(SDL_GAMEPAD_BUTTON_START, kind),
+                          padButtonLabel(SDL_GAMEPAD_BUTTON_EAST, kind));
         ImGui::BulletText("%s: the pointer - then %s clicks and %s right-clicks",
                           padButtonLabel(SDL_GAMEPAD_BUTTON_BACK, kind),
                           padButtonLabel(SDL_GAMEPAD_BUTTON_SOUTH, kind),
@@ -219,106 +219,9 @@ void SettingsPanel::renderSettingsGameplayTab(const std::function<void()>& saveC
     ImGui::EndChild();
 }
 
-void SettingsPanel::renderSettingsControlsTab(const std::function<void()>& saveCallback) {
-ImGui::Spacing();
-
-ImGui::Text("Keybindings");
-ImGui::Separator();
-
-auto& km = ui::KeybindingManager::getInstance();
-int numActions = km.getActionCount();
-
-for (int i = 0; i < numActions; ++i) {
-    auto action = static_cast<ui::KeybindingManager::Action>(i);
-    const char* actionName = km.getActionName(action);
-    ImGuiKey currentKey = km.getKeyForAction(action);
-
-    // Display current binding
-    ImGui::Text("%s:", actionName);
-    ImGui::SameLine(200);
-
-    // Get human-readable key name (basic implementation)
-    const char* keyName = "Unknown";
-    if (currentKey >= ImGuiKey_A && currentKey <= ImGuiKey_Z) {
-        static char keyBuf[16];
-        snprintf(keyBuf, sizeof(keyBuf), "%c", 'A' + (currentKey - ImGuiKey_A));
-        keyName = keyBuf;
-    } else if (currentKey >= ImGuiKey_0 && currentKey <= ImGuiKey_9) {
-        static char keyBuf[16];
-        snprintf(keyBuf, sizeof(keyBuf), "%c", '0' + (currentKey - ImGuiKey_0));
-        keyName = keyBuf;
-    } else if (currentKey == ImGuiKey_Escape) {
-        keyName = "Escape";
-    } else if (currentKey == ImGuiKey_Enter) {
-        keyName = "Enter";
-    } else if (currentKey == ImGuiKey_Tab) {
-        keyName = "Tab";
-    } else if (currentKey == ImGuiKey_Space) {
-        keyName = "Space";
-    } else if (currentKey == ImGuiKey_MouseX1) {
-        keyName = "Mouse4";
-    } else if (currentKey == ImGuiKey_MouseX2) {
-        keyName = "Mouse5";
-    } else if (currentKey >= ImGuiKey_F1 && currentKey <= ImGuiKey_F12) {
-        static char keyBuf[16];
-        snprintf(keyBuf, sizeof(keyBuf), "F%d", 1 + (currentKey - ImGuiKey_F1));
-        keyName = keyBuf;
-    }
-
-    ImGui::Text("[%s]", keyName);
-
-    // Rebind button
-    ImGui::SameLine(350);
-    if (ImGui::Button(awaitingKeyPress_ && pendingRebindAction_ == i ? "Waiting..." : "Rebind", ImVec2(100, 0))) {
-        pendingRebindAction_ = i;
-        awaitingKeyPress_ = true;
-    }
-}
-
-// Handle key press during rebinding
-if (awaitingKeyPress_ && pendingRebindAction_ >= 0) {
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Text("Press any key to bind to this action (Esc to cancel)...");
-
-    // Check for any key press
-    bool foundKey = false;
-    ImGuiKey newKey = ImGuiKey_None;
-    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
-        if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k), false)) {
-            if (k == ImGuiKey_Escape) {
-                // Cancel rebinding
-                awaitingKeyPress_ = false;
-                pendingRebindAction_ = -1;
-                foundKey = true;
-                break;
-            }
-            newKey = static_cast<ImGuiKey>(k);
-            foundKey = true;
-            break;
-        }
-    }
-
-    if (foundKey && newKey != ImGuiKey_None) {
-        auto action = static_cast<ui::KeybindingManager::Action>(pendingRebindAction_);
-        km.setKeyForAction(action, newKey);
-        awaitingKeyPress_ = false;
-        pendingRebindAction_ = -1;
-        saveCallback();
-    }
-}
-
-ImGui::Spacing();
-ImGui::Separator();
-ImGui::Spacing();
-
-if (ImGui::Button("Reset to Defaults", ImVec2(-1, 0))) {
-    km.resetToDefaults();
-    awaitingKeyPress_ = false;
-    pendingRebindAction_ = -1;
-    saveCallback();
-}
-
+void SettingsPanel::renderSettingsControlsTab(const std::function<void()>&) {
+    // ponytail: one editor; FrameXML owns the binding catalogue and assignments.
+    ImGui::TextWrapped("Change key bindings in Game Menu > Key Bindings.");
 }
 
 void SettingsPanel::renderSettingsAudioTab(std::function<void()> saveCallback) {

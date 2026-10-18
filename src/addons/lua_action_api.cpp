@@ -9,20 +9,14 @@
 #include "ui/framexml_takeover.hpp"
 #include "ui/keybinding_manager.hpp"
 #include "ui/settings_panel.hpp"
-#include "addons/binding_file.hpp"
 #include "ui/gamepad_controls.hpp"
 
 #include <span>
 #include "core/config_paths.hpp"
-#include <array>
 #include <cctype>
 #include <filesystem>
-#include <fstream>
-#include <map>
 #include "game/current_action.hpp"
 #include "game/pet_action.hpp"
-#include "imgui.h"
-#include <optional>
 #include <SDL3/SDL_keyboard.h>
 
 namespace wowee::addons {
@@ -1570,198 +1564,31 @@ static int lua_BeginTrade(lua_State* L) {
 
 namespace {
 
-/// command → its two keys, empty meaning not bound. Two because the UI offers a
-/// primary and a secondary and will write either.
-std::map<std::string, std::array<std::string, 2>>& bindingKeys() {
-    static std::map<std::string, std::array<std::string, 2>> keys;
-    return keys;
-}
+// Assignments live in the same manager gameplay reads; FrameXML owns the commands.
+auto& bindingKeys() { return wowee::ui::KeybindingManager::getInstance().bindings(); }
+std::string bindingsFilePath() { return core::getConfigRoot() + "/bindings.cfg"; }
 
-std::string bindingsFilePath() {
-    return core::getConfigRoot() + "/bindings.cfg";
-}
-
-/// ImGui spells keys as "C" and "Space"; the interface expects "C" and "SPACE",
-/// and compares them as strings everywhere.
-std::string wowKeyFromImGui(ImGuiKey key) {
-    // An action with nothing bound to it answers "None", which uppercased is a
-    // perfectly ordinary-looking key name and would show as one.
-    if (key == ImGuiKey_None) return "";
-    const char* name = ImGui::GetKeyName(key);
-    if (!name || !*name) return "";
-    std::string out(name);
-    for (char& c : out) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    return out;
-}
-
-/// The commands the client has a real action behind. Rebinding one of these has
-/// to reach the manager, or the list would show the new key while the client
-/// went on answering to the old one.
-struct LiveBinding {
-    const char* command;
-    wowee::ui::KeybindingManager::Action action;
-};
-const LiveBinding kLiveBindings[] = {
-    {"TOGGLECHARACTER0",  wowee::ui::KeybindingManager::Action::TOGGLE_CHARACTER_SCREEN},
-    {"TOGGLEBACKPACK",    wowee::ui::KeybindingManager::Action::TOGGLE_BAGS},
-    {"TOGGLESPELLBOOK",   wowee::ui::KeybindingManager::Action::TOGGLE_SPELLBOOK},
-    {"TOGGLETALENTS",     wowee::ui::KeybindingManager::Action::TOGGLE_TALENTS},
-    {"TOGGLEQUESTLOG",    wowee::ui::KeybindingManager::Action::TOGGLE_QUESTS},
-    {"TOGGLEWORLDMAP",    wowee::ui::KeybindingManager::Action::TOGGLE_WORLD_MAP},
-    {"TOGGLEMINIMAP",     wowee::ui::KeybindingManager::Action::TOGGLE_MINIMAP},
-    {"TOGGLEACHIEVEMENT", wowee::ui::KeybindingManager::Action::TOGGLE_ACHIEVEMENTS},
-    {"TOGGLEGUILDTAB",    wowee::ui::KeybindingManager::Action::TOGGLE_GUILD_ROSTER},
-};
-
-/// The named key whose name matches, or none. ImGui offers no reverse lookup,
-/// and the set is small enough that walking it costs nothing next to the file
-/// write that follows a rebind.
-ImGuiKey imGuiKeyFromWow(const std::string& name) {
-    if (name.empty()) return ImGuiKey_None;
-    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
-        if (wowKeyFromImGui(static_cast<ImGuiKey>(k)) == name) {
-            return static_cast<ImGuiKey>(k);
-        }
-    }
-    return ImGuiKey_None;
-}
-
-/// Hand a binding to the client's own keybinding manager, if it answers that
-/// command at all.
-///
-/// The interface allows two keys per command and the manager holds one per
-/// action, so what is pushed here is keys[0] - the primary. The second stays
-/// in the Lua map above. Both are kept past the session: SaveBindings writes
-/// the two slots of every command in that map, and LoadBindings reads them
-/// back and pushes the primary here again.
-///
-/// A binding for a command not in kLiveBindings does not reach the manager at
-/// all. That is intended: those are the commands the interface answers for
-/// itself.
-void pushBindingToClient(const std::string& command, const std::string& key) {
-    for (const auto& live : kLiveBindings) {
-        if (command != live.command) continue;
-        const ImGuiKey imKey = imGuiKeyFromWow(key);
-        wowee::ui::KeybindingManager::getInstance().setKeyForAction(live.action, imKey);
-        return;
-    }
-}
-
-/// The key the client is listening for, when this is a command it acts on.
-///
-/// Read at the moment it is asked rather than from the copy below, because the
-/// client's own settings panel can rebind these too - and then the copy is a
-/// second answer to a question the manager already owns, one keystroke out of
-/// date and shown on every action button.
-std::optional<std::string> liveKeyFor(const std::string& command) {
-    for (const auto& live : kLiveBindings) {
-        if (command != live.command) continue;
-        std::string key =
-            wowKeyFromImGui(wowee::ui::KeybindingManager::getInstance()
-                                .getKeyForAction(live.action));
-        if (key.empty()) return std::nullopt;
-        return key;
-    }
-    return std::nullopt;
-}
-
-/// What SaveBindings wrote, over whatever is in the map. `pushLive` also hands
-/// the client's own commands to its manager; at start-up it does not, because
-/// the manager keeps those keys itself and a rebind made in the client's
-/// settings panel is newer than this file.
-void applySavedBindings(bool pushLive) {
-    std::ifstream in(bindingsFilePath());
-    if (!in) return;   // Nothing saved yet is not a failure.
-    for (const auto& [command, saved] : wowee::addons::parseSavedBindings(in)) {
-        if (!pushLive && liveKeyFor(command)) continue;
-        bindingKeys()[command] = saved;
-        // A binding saved in the second slot alone is still a binding.
-        if (pushLive) pushBindingToClient(command, saved[0].empty() ? saved[1] : saved[0]);
-    }
-    if (pushLive) return;
-    // The manager's keys win, so none of them may also sit on another command:
-    // GetBindingAction would answer with whichever the map holds first.
-    for (const auto& live : kLiveBindings) {
-        const auto key = liveKeyFor(live.command);
-        if (!key) continue;
-        for (auto& [command, slots] : bindingKeys()) {
-            if (command == live.command) continue;
-            for (auto& slot : slots) {
-                if (slot == *key) slot.clear();
-            }
-        }
-    }
-}
-
-/// The keys the client is actually listening for, asked of the manager that
-/// listens rather than restated here - a second copy would be wrong the moment
-/// either side moved. Commands the client has no action for keep their retail
-/// default, so the list reads correctly even where nothing acts on it yet.
-///
-/// Then what the player saved, unless only the defaults are wanted: this is
-/// the first thing any binding lookup calls, so it is also where a binding
-/// made in an earlier session comes back.
-void seedBindingDefaults(bool withSaved = true) {
-    auto& keys = bindingKeys();
-    if (!keys.empty()) return;
-
-    static const struct { const char* command; const char* key; } kDefaults[] = {
-        {"MOVEFORWARD", "W"},   {"MOVEBACKWARD", "S"},
-        {"TURNLEFT", "A"},      {"TURNRIGHT", "D"},
-        {"STRAFELEFT", "Q"},    {"STRAFERIGHT", "E"},
-        {"JUMP", "SPACE"},      {"TOGGLEAUTORUN", "NUMLOCK"},
-        // Tab targets, and has since the client was written; the panel said
-        // this one was unbound because nothing had ever told it.
-        {"TARGETNEARESTENEMY", "TAB"},
-        {"TOGGLEGAMEMENU", "ESCAPE"},
-        {"SCREENSHOT", "PRINTSCREEN"},
-        {"ACTIONBUTTON1", "1"}, {"ACTIONBUTTON2", "2"},
-        {"ACTIONBUTTON3", "3"}, {"ACTIONBUTTON4", "4"},
-        {"ACTIONBUTTON5", "5"}, {"ACTIONBUTTON6", "6"},
-        {"ACTIONBUTTON7", "7"}, {"ACTIONBUTTON8", "8"},
-        {"ACTIONBUTTON9", "9"}, {"ACTIONBUTTON10", "0"},
-        {"ACTIONBUTTON11", "-"},{"ACTIONBUTTON12", "="},
-    };
-    for (const auto& d : kDefaults) keys[d.command] = {d.key, ""};
-
-    // Where a command corresponds to something the client really does, the key
-    // shown is the one it really answers to.
+void seedBindingDefaults(bool withSaved = true, bool reset = false) {
+    static bool seeded = false;
+    if (seeded && !reset) return;
+    seeded = true;
     auto& manager = wowee::ui::KeybindingManager::getInstance();
-    for (const auto& live : kLiveBindings) {
-        const std::string key = wowKeyFromImGui(manager.getKeyForAction(live.action));
-        if (!key.empty()) keys[live.command] = {key, ""};
-    }
-
-    // And the controller's own defaults, as second keys.
-    //
-    // The pad's scheme was written in C++ and pressed keys directly, so the
-    // game's Key Bindings panel showed Action Button 3 on "3" and said
-    // nothing about the D-pad: a player who opened the one screen that exists
-    // for finding out what a button does saw a controller bound to nothing,
-    // and had no way to change any of it.
-    //
-    // Read off the table that performs the scheme rather than restated here,
-    // so the two cannot drift. The rows with no command - the bumper that is
-    // only a modifier, the button that raises the pointer, the stick click
-    // that sits down - stay the client's own, having nothing in the
-    // interface's vocabulary to be.
-    //
-    // Second rather than first, so the keyboard's key is still the one shown
-    // where only one fits.
-    const auto seedPad = [&keys](std::span<const wowee::ui::PadBinding> rows) {
-        for (const wowee::ui::PadBinding& row : rows) {
-            const char* command = row.command;
-            if (!command || !*command) continue;
-            const char* padKey = wowee::ui::padKeyName(row.button);
-            if (!padKey || !*padKey) continue;
-            auto& pair = keys[command];
-            if (pair[1].empty()) pair[1] = padKey;
+    if (reset) manager.resetToDefaults();
+    const auto seedPad = [](std::span<const wowee::ui::PadBinding> rows) {
+        for (const auto& row : rows) {
+            if (!row.command || !*row.command) continue;
+            const char* key = wowee::ui::padKeyName(row.button);
+            if (key && *key) {
+                auto& slots = bindingKeys()[row.command];
+                if (slots[1].empty()) slots[1] = key;
+            }
         }
     };
     seedPad(wowee::ui::padBindings());
     seedPad(wowee::ui::padExtraBindings());
-
-    if (withSaved) applySavedBindings(false);
+    if (withSaved) {
+        manager.loadBindingsWithLegacy(bindingsFilePath(), wowee::ui::SettingsPanel::getSettingsPath());
+    }
 }
 
 /// The command list the emitter built, or zero if bindings.xml never loaded.
@@ -1787,55 +1614,26 @@ std::string bindingAt(lua_State* L, int index) {
 }  // namespace
 
 bool clientActsOnBinding(const std::string& command) {
-    // The nine the client really performs, asked of the same list that keeps
-    // their keys in step rather than restated - a second copy would be wrong
-    // the moment either side moved.
-    for (const auto& live : kLiveBindings) {
-        if (command == live.command) return true;
-    }
-    // And the rest of what the client answers without going through a binding
-    // at all. Each is a real call site: movement and jumping are polled every
-    // frame, the action bar takes 1 through 0 and the two beside them in
-    // GameScreen, chat opens on Enter and on slash, Tab targets, and Escape has
-    // a whole chain of its own in escape_action.hpp.
-    //
-    // By command rather than by key, because the conflict is that the *action*
-    // happens twice. Most bindings toggle something, so two answers to one
-    // press cancel out and the key reads as dead - which is worse than doing
-    // nothing, since it looks like the binding never ran.
-    static constexpr const char* kClientAnswers[] = {
-        "MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "TURNRIGHT",
-        "STRAFELEFT", "STRAFERIGHT", "JUMP", "TOGGLEAUTORUN", "TOGGLERUN",
-        "TOGGLEGAMEMENU", "OPENCHAT", "OPENCHATSLASH", "TARGETNEARESTENEMY",
-        "SCREENSHOT", "TOGGLESHEATH",
-        "ACTIONBUTTON1", "ACTIONBUTTON2", "ACTIONBUTTON3", "ACTIONBUTTON4",
-        "ACTIONBUTTON5", "ACTIONBUTTON6", "ACTIONBUTTON7", "ACTIONBUTTON8",
-        "ACTIONBUTTON9", "ACTIONBUTTON10", "ACTIONBUTTON11", "ACTIONBUTTON12",
+    using Manager = wowee::ui::KeybindingManager;
+    for (int i = 0; i < Manager::getActionCount(); ++i)
+        if (command == Manager::commandForAction(static_cast<Manager::Action>(i))) return true;
+    static constexpr const char* native[] = {
+        "MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "TURNRIGHT", "STRAFELEFT", "STRAFERIGHT",
+        "JUMP", "SITORSTAND", "TOGGLERUN", "OPENCHATSLASH", "TARGETNEARESTENEMY",
+        "SCREENSHOT", "WOWEETOGGLERECORDING", "TOGGLESHEATH", "FRIENDNAMEPLATES", "CAMERAZOOMIN", "CAMERAZOOMOUT",
     };
-    for (const char* name : kClientAnswers) {
-        if (command == name) return true;
-    }
+    for (const char* name : native) if (command == name) return true;
+    for (const auto& [prefix, count] : {std::pair{"ACTIONBUTTON", 12},
+             {"SHAPESHIFTBUTTON", 8}, {"MULTIACTIONBAR1BUTTON", 12}})
+        for (int i = 1; i <= count; ++i)
+            if (command == prefix + std::to_string(i)) return true;
     return false;
-}
-
-int clientImGuiKeyForBinding(const std::string& command) {
-    for (const auto& live : kLiveBindings) {
-        if (command != live.command) continue;
-        return static_cast<int>(
-            wowee::ui::KeybindingManager::getInstance().getKeyForAction(live.action));
-    }
-    return 0;
 }
 
 // GetBindingKey(command) → key1, key2 (or nil)
 static int lua_GetBindingKey(lua_State* L) {
     seedBindingDefaults();
     const std::string command = luaL_checkstring(L, 1);
-    if (auto live = liveKeyFor(command)) {
-        lua_pushstring(L, live->c_str());
-        lua_pushnil(L);
-        return 2;
-    }
     auto it = bindingKeys().find(command);
     if (it == bindingKeys().end()) { lua_pushnil(L); lua_pushnil(L); return 2; }
     for (const std::string& key : it->second) {
@@ -1861,13 +1659,7 @@ static int lua_GetBindingKey(lua_State* L) {
 static int lua_GetBindingAction(lua_State* L) {
     seedBindingDefaults();
     const std::string key = luaL_checkstring(L, 1);
-    for (const auto& [command, keys] : bindingKeys()) {
-        if (keys[0] == key || keys[1] == key) {
-            lua_pushstring(L, command.c_str());
-            return 1;
-        }
-    }
-    lua_pushstring(L, "");
+    lua_pushstring(L, wowee::ui::KeybindingManager::getInstance().commandForKey(key).c_str());
     return 1;
 }
 
@@ -1885,11 +1677,6 @@ static int lua_GetBinding(lua_State* L) {
     const std::string command = bindingAt(L, index);
     if (command.empty()) { lua_pushnil(L); return 1; }
     lua_pushstring(L, command.c_str());
-    if (auto live = liveKeyFor(command)) {
-        lua_pushstring(L, live->c_str());
-        lua_pushnil(L);
-        return 3;
-    }
     auto it = bindingKeys().find(command);
     if (it == bindingKeys().end()) { lua_pushnil(L); lua_pushnil(L); return 3; }
     for (const std::string& key : it->second) {
@@ -1905,24 +1692,9 @@ static int lua_SetBinding(lua_State* L) {
     const std::string key = luaL_checkstring(L, 1);
     const char* command = lua_isnoneornil(L, 2) ? nullptr : luaL_checkstring(L, 2);
 
-    // A key belongs to one command at a time, so it leaves the one that had it
-    // before it joins another - otherwise both claim it and which one answers
-    // depends on map order.
-    for (auto& [existing, keys] : bindingKeys()) {
-        for (std::string& slot : keys) {
-            if (slot != key) continue;
-            slot.clear();
-            // The command that just lost the key has to be told, not only the
-            // one that gained it, or the client answers to both. What it
-            // answers to now is whichever slot still holds something, which is
-            // not always the first.
-            pushBindingToClient(existing, keys[0].empty() ? keys[1] : keys[0]);
-        }
-    }
-    if (command) {
-        auto& keys = bindingKeys()[command];
-        if (keys[0].empty()) keys[0] = key; else keys[1] = key;
-        pushBindingToClient(command, keys[0]);
+    if (!wowee::ui::KeybindingManager::getInstance().setBinding(key, command ? command : "")) {
+        lua_pushboolean(L, 0);
+        return 1;
     }
     // Six frames wait on this, the action buttons among them: it is what
     // redraws the little key printed in the corner. Without it a rebind takes
@@ -1934,26 +1706,9 @@ static int lua_SetBinding(lua_State* L) {
 
 // SaveBindings(which) → writes what is bound where, for the next run
 static int lua_SaveBindings(lua_State* L) {
-    (void)L;
-    const std::string path = bindingsFilePath();
-    std::error_code ec;
-    std::filesystem::create_directories(
-        std::filesystem::path(path).parent_path(), ec);
-    std::ofstream out(path, std::ios::trunc);
-    if (!out) {
-        LOG_WARNING("Could not write the key bindings to ", path);
-        return 0;
-    }
-    for (const auto& [command, keys] : bindingKeys()) {
-        // Both slots on one line, the second empty when there is no second key,
-        // so a command that lost one is recorded as having lost it.
-        out << command << "=" << keys[0] << "," << keys[1] << "\n";
-    }
-    // The commands the client's own manager answers are saved by it too, so
-    // the two files never disagree about a key on the next start.
-    wowee::ui::KeybindingManager::getInstance().saveToConfigFile(
-        wowee::ui::SettingsPanel::getSettingsPath());
-    return 0;
+    seedBindingDefaults();
+    lua_pushboolean(L, wowee::ui::KeybindingManager::getInstance().saveBindings(bindingsFilePath()));
+    return 1;
 }
 
 // LoadBindings(which) → the defaults for DEFAULT_BINDINGS (0), otherwise what
@@ -1961,22 +1716,7 @@ static int lua_SaveBindings(lua_State* L) {
 // passes 0 and its Cancel passes the current set.
 static int lua_LoadBindings(lua_State* L) {
     const bool defaultsOnly = luaL_optinteger(L, 1, 1) == 0;
-    auto& manager = wowee::ui::KeybindingManager::getInstance();
-    if (defaultsOnly) {
-        for (const auto& live : kLiveBindings) {
-            manager.setKeyForAction(live.action, manager.getDefaultKeyForAction(live.action));
-        }
-    } else {
-        // Back to what was last saved, including what this panel changed in
-        // the client's own manager since.
-        manager.loadFromConfigFile(wowee::ui::SettingsPanel::getSettingsPath());
-    }
-    bindingKeys().clear();
-    seedBindingDefaults(false);
-    // What was saved is what the client should answer to, not what it
-    // started with - otherwise a rebind survives in the list and nowhere
-    // else, and only until the next save overwrites it.
-    if (!defaultsOnly) applySavedBindings(true);
+    seedBindingDefaults(!defaultsOnly, true);
     if (auto* gh = getGameHandler(L)) gh->fireAddonEvent("UPDATE_BINDINGS", {});
     return 0;
 }
@@ -2014,6 +1754,7 @@ static int lua_ClearOverrideBindings(lua_State* L) { (void)L; return 0; }
 // Frame methods: SetPoint, SetSize, SetWidth, SetHeight, GetWidth, GetHeight, GetCenter, SetAlpha, GetAlpha
 
 void registerActionLuaAPI(lua_State* L) {
+    seedBindingDefaults();
     static const struct { const char* name; lua_CFunction func; } api[] = {
                 {"HasAction",           lua_HasAction},
                 // A macro's name, which only a macro has; ActionButton_Update

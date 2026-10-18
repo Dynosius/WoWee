@@ -6,6 +6,7 @@
 #include "ui/interface_fonts.hpp"
 #include "ui/ui_colors.hpp"
 #include "ui/framexml_takeover.hpp"
+#include "ui/keybinding_manager.hpp"
 #include <chrono>
 #include <cfloat>
 #include <cctype>
@@ -9796,45 +9797,12 @@ void LuaEngine::dispatchText(const char* utf8) {
 /// "ESCAPE" and the digits - so a wrong spelling is a handler that never
 /// matches rather than an error anyone would see.
 static std::string wowKeyName(int sym) {
-    if (sym >= 'a' && sym <= 'z') return std::string(1, static_cast<char>(sym - 32));
-    if (sym >= '0' && sym <= '9') return std::string(1, static_cast<char>(sym));
-    switch (sym) {
-        case 27:         return "ESCAPE";
-        case ' ':        return "SPACE";
-        case '\r':       return "ENTER";
-        case '\t':       return "TAB";
-        case '\b':       return "BACKSPACE";
-        case 0x4000004A: return "HOME";
-        case 0x4000004D: return "END";
-        case 0x4000004B: return "PAGEUP";
-        case 0x4000004E: return "PAGEDOWN";
-        case 0x4000004C: return "DELETE";
-        case 0x40000049: return "INSERT";
-        case 0x40000050: return "LEFT";
-        case 0x4000004F: return "RIGHT";
-        case 0x40000052: return "UP";
-        case 0x40000051: return "DOWN";
-        default: break;
-    }
-    // F1..F12 are contiguous in SDL's scancode-derived range.
-    if (sym >= 0x4000003A && sym <= 0x40000045) {
-        return "F" + std::to_string(sym - 0x4000003A + 1);
-    }
-    return {};
+    return ui::KeybindingManager::keyNameFromSDL(static_cast<uint32_t>(sym));
 }
 
-std::string LuaEngine::bindingCommandFor(int sdlKeycode, bool shift, bool ctrl,
-                                         bool alt) {
-    if (!L_) return "";
-    std::string key = wowKeyName(sdlKeycode);
-    if (key.empty()) return "";
-    // WoW's own spelling, and the order is part of it: ALT before CTRL before
-    // SHIFT, because that is how the binding tables are keyed and a prefix in
-    // any other order matches nothing at all.
-    if (shift) key = "SHIFT-" + key;
-    if (ctrl)  key = "CTRL-"  + key;
-    if (alt)   key = "ALT-"   + key;
-    return bindingCommandForKey(key);
+std::string LuaEngine::bindingCommandFor(int sdlKeycode, bool shift, bool ctrl, bool alt) {
+    return bindingCommandForKey(ui::KeybindingManager::modifiedKey(
+        wowKeyName(sdlKeycode), shift, ctrl, alt));
 }
 
 std::string LuaEngine::bindingCommandForKey(const std::string& key) {
@@ -9855,28 +9823,34 @@ std::string LuaEngine::bindingCommandForKey(const std::string& key) {
     const char* got = lua_tostring(L_, -1);
     std::string command = got ? got : "";
     lua_pop(L_, 1);
+    if (command.empty()) {
+        std::string base = key;
+        for (const char* prefix : {"ALT-", "CTRL-", "SHIFT-"})
+            if (base.starts_with(prefix)) base.erase(0, std::char_traits<char>::length(prefix));
+        if (base != key) return bindingCommandForKey(base);
+    }
     return command;
 }
 
-bool LuaEngine::dispatchBindingKey(int sdlKeycode, bool shift, bool ctrl,
-                                   bool alt, bool down) {
-    if (!L_) return false;
+bool LuaEngine::dispatchBindingKey(int sdlKeycode, bool shift, bool ctrl, bool alt, bool down) {
+    return dispatchBindingInput(wowKeyName(sdlKeycode), shift, ctrl, alt, down);
+}
+
+bool LuaEngine::dispatchBindingInput(const std::string& key, bool shift, bool ctrl, bool alt, bool down) {
+    if (!L_ || key.empty()) return false;
     if (!down) {
-        auto held = heldBindings_.find(sdlKeycode);
+        auto held = heldBindings_.find(key);
         if (held == heldBindings_.end()) return false;
         const std::string command = std::move(held->second);
         heldBindings_.erase(held);
-        return runBindingScript(command, false);
+        return !bindingRunsOnUp(command) || runBindingScript(command, false);
     }
-    // A key held down repeats; the binding it pressed waits for its release.
-    if (heldBindings_.count(sdlKeycode)) return true;
-    const std::string command = bindingCommandFor(sdlKeycode, shift, ctrl, alt);
-    if (command.empty()) return false;
-    // Left alone if the client performs it. Not "already handled, so skip the
-    // work" - running it as well would undo it.
-    if (clientActsOnBinding(command)) return false;
+    if (heldBindings_.count(key)) return true;
+    if (editBoxHasFocus() || ImGui::GetIO().WantTextInput) return false;
+    const std::string command = bindingCommandForKey(ui::KeybindingManager::modifiedKey(key, shift, ctrl, alt));
+    if (command.empty() || clientActsOnBinding(command)) return false;
     if (!runBindingScript(command, true)) return false;
-    if (bindingRunsOnUp(command)) heldBindings_[sdlKeycode] = command;
+    heldBindings_[key] = command; // Release the original command even if it is rebound while held.
     return true;
 }
 
