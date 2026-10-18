@@ -1,4 +1,4 @@
-// binding_file.hpp - the saved key bindings, one `COMMAND=KEY1,KEY2` per line.
+// Saved bindings: COMMAND=KEY1<TAB>KEY2; legacy comma-separated files also load.
 #pragma once
 
 #include <array>
@@ -21,10 +21,11 @@ inline SavedBindings parseSavedBindings(std::istream& in) {
         const size_t eq = line.find('=');
         if (eq == std::string::npos || eq == 0) continue;
         const std::string rest = line.substr(eq + 1);
-        const size_t comma = rest.find(',');
+        const size_t tab = rest.find('\t');
+        const size_t separator = tab == std::string::npos ? rest.find(',') : tab;
         out[line.substr(0, eq)] = {
-            rest.substr(0, comma),
-            comma == std::string::npos ? "" : rest.substr(comma + 1)
+            rest.substr(0, separator),
+            separator == std::string::npos ? "" : rest.substr(separator + 1)
         };
     }
     return out;

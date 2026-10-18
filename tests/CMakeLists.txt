@@ -2291,6 +2291,42 @@ wowee_add_test(test_auction_slot_filter
 wowee_add_test(test_binding_file
     SOURCES test_binding_file.cpp)
 
+add_executable(check_keybindings
+    check_keybindings.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${TEST_COMMON_SOURCES})
+target_include_directories(check_keybindings PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(check_keybindings PRIVATE imgui SDL3::SDL3)
+add_test(NAME keybindings COMMAND check_keybindings)
+register_test_target(check_keybindings)
+
+add_executable(check_autorun_binding
+    check_autorun_binding.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${TEST_COMMON_SOURCES})
+target_include_directories(check_autorun_binding PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(check_autorun_binding PRIVATE imgui SDL3::SDL3)
+add_test(NAME autorun_binding COMMAND check_autorun_binding)
+register_test_target(check_autorun_binding)
+
+add_executable(check_input_edges
+    check_input_edges.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${TEST_COMMON_SOURCES})
+target_include_directories(check_input_edges PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(check_input_edges PRIVATE imgui SDL3::SDL3)
+add_test(NAME input_edges COMMAND check_input_edges)
+register_test_target(check_input_edges)
+
+add_executable(check_binding_migration
+    check_binding_migration.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${TEST_COMMON_SOURCES})
+target_include_directories(check_binding_migration PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(check_binding_migration PRIVATE imgui SDL3::SDL3)
+add_test(NAME binding_migration COMMAND check_binding_migration)
+register_test_target(check_binding_migration)
+
 # ── test_tab_target ──────────────────────────────────────────
 # Which units Tab and TargetNearestEnemy may pick: hostile and neutral alike,
 # but not friendly units, critters, or units the server marks unselectable,

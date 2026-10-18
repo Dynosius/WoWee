@@ -2,9 +2,13 @@
 
 #include <imgui.h>
 #include <string>
-#include <unordered_map>
-#include <memory>
+#include <map>
+#include <array>
+#include <set>
+#include <cstdint>
 #include <functional>
+
+union SDL_Event;
 
 namespace wowee::ui {
 
@@ -31,10 +35,36 @@ public:
         TOGGLE_ACHIEVEMENTS,
         TOGGLE_SKILLS,
         TOGGLE_PVP,
+        TOGGLE_AUTORUN,
         ACTION_COUNT
     };
 
     static KeybindingManager& getInstance();
+
+    // Blizzard command names and two slots are the only binding store.
+    using Bindings = std::map<std::string, std::array<std::string, 2>>;
+    Bindings& bindings() { return bindings_; }
+    const Bindings& bindings() const { return bindings_; }
+    bool setBinding(const std::string& key, const std::string& command = "");
+    bool loadBindings(const std::string& path);
+    bool loadBindingsWithLegacy(const std::string& path, const std::string& legacyPath);
+    bool saveBindings(const std::string& path) const;
+    std::string commandForKey(const std::string& key) const;
+    bool isCommandPressed(const std::string& command, bool repeat = false) const;
+    bool isCommandDown(const std::string& command) const;
+    static const char* commandForAction(Action action);
+    static std::string keyName(ImGuiKey key);
+    static ImGuiKey keyFromName(const std::string& name);
+    static std::string keyNameFromSDL(uint32_t key);
+    static std::string mouseButtonNameFromSDL(uint8_t button);
+    static std::string modifiedKey(std::string key, bool shift, bool ctrl, bool alt);
+
+    // Collect press edges during the pump; sample held state before gameplay.
+    void beginInputFrame();
+    void processInputEvent(const SDL_Event& event);
+    void updateInput();
+    void setVirtualKey(const std::string& key, bool down);
+    void setVirtualCommand(const std::string& command, const std::string& source, bool down);
 
     /**
      * Check if an action's keybinding was just pressed.
@@ -62,7 +92,7 @@ public:
     /**
      * Load keybindings from config file.
      */
-    void loadFromConfigFile(const std::string& filePath);
+    bool loadFromConfigFile(const std::string& filePath);
 
     /**
      * Save keybindings to config file.
@@ -82,8 +112,17 @@ public:
 private:
     KeybindingManager();
 
-    std::unordered_map<int, ImGuiKey> bindings_;  // action -> key
-
+    Bindings bindings_;
+    bool legacySettingsMigrated_ = false;
+    std::array<bool, ImGuiKey_NamedKey_COUNT> down_{};
+    std::set<std::string> pressedKeys_; // qualified names at the physical down edge
+    bool nativeInput_ = false;
+    bool inputFocused_ = true;
+    std::map<std::string, bool> virtualKeys_;
+    std::set<std::string> virtualPressed_;
+    std::map<std::string, std::set<std::string>> virtualCommands_;
+    std::set<std::string> virtualCommandPressed_;
+    bool keyActive(const std::string& key, bool pressed, bool repeat = false) const;
     void initializeDefaults();
 };
 
