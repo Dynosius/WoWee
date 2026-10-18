@@ -2309,6 +2309,18 @@ target_link_libraries(check_autorun_binding PRIVATE imgui SDL3::SDL3)
 add_test(NAME autorun_binding COMMAND check_autorun_binding)
 register_test_target(check_autorun_binding)
 
+add_executable(check_recording_binding
+    check_recording_binding.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/framexml_emitter.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/xml_parser.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${TEST_COMMON_SOURCES})
+target_include_directories(check_recording_binding PRIVATE
+    ${TEST_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/extern/lua-5.1.5/src)
+target_link_libraries(check_recording_binding PRIVATE imgui SDL3::SDL3 lua51)
+add_test(NAME recording_binding COMMAND check_recording_binding)
+register_test_target(check_recording_binding)
+
 add_executable(check_input_edges
     check_input_edges.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
