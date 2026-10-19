@@ -91,6 +91,7 @@ public:
     /// window height - converted here rather than by the caller, so the
     /// tree's coordinate space has one entrance.
     void dispatchMouse(float x, float y, float screenH, MouseButtons buttons);
+    void noteMouseModifiers(int button, int modifiers);
 
     /// Whether the interface is holding a press: a button went down on a frame
     /// and has not come up, or a frame is being dragged or moved.
@@ -121,7 +122,7 @@ public:
     /// Returns true when a frame took it, so the caller knows not to also zoom
     /// the camera - scrolling a quest log and pulling the camera in at the same
     /// time is what happens otherwise. delta is WoW's: positive is up.
-    bool dispatchMouseWheel(float x, float y, float delta);
+    bool dispatchMouseWheel(float x, float y, float delta, int modifiers = -1);
 
     /// How many notches a unit of wheel travel is worth in the interface's
     /// scrolling windows. 1 is a notch per click of a wheel; a trackpad's many
@@ -179,7 +180,10 @@ public:
     /// took it, so the caller knows not to also treat it as a movement key or
     /// a binding - which is the whole reason a dialog can be typed into.
     // Binding capture uses physical positions; ordinary dialogs keep layout keys.
-    bool dispatchFrameKey(int sdlKeycode, bool down, int bindingKeycode = 0);
+    // modifiers is the event-position SDL mask, not SDL's final pumped state.
+    bool dispatchFrameKey(int sdlKeycode, bool down, int bindingKeycode = 0, int modifiers = -1);
+    /// Release the original script/frame recipients on focus loss or teardown.
+    void releaseInput();
 
     /// A typed character, for a frame that asked for the keyboard and is not an
     /// edit box. OnChar is where a dialog reads digits: StackSplitFrame's own
@@ -296,7 +300,20 @@ private:
     ui::WidgetTree widgets_;
     /// runOnUp commands whose key is down, by keycode, so the release reaches
     /// the same command even when a modifier was let go first.
-    std::unordered_map<std::string, std::string> heldBindings_;
+    struct HeldBinding {
+        std::string command;
+        int releaseScript = -2; // LUA_NOREF; retain the actual runOnUp function.
+    };
+    std::unordered_map<std::string, HeldBinding> heldBindings_;
+    struct HeldFrameKey {
+        uint32_t frame;
+        std::string key;
+        bool consumed;
+    };
+    // Only the editor capture helper reads this; ordinary addon APIs keep SDL semantics.
+    int bindingCaptureModifiers_ = -1;
+    std::unordered_map<int, HeldFrameKey> heldFrameKeys_;
+    std::unordered_map<std::string, HeldFrameKey> heldPadFrameKeys_;
     game::GameHandler* gameHandler_ = nullptr;
     LuaServices luaServices_;
     LuaErrorCallback luaErrorCallback_;
@@ -320,7 +337,7 @@ private:
     /// The frame a typed key belongs to - see dispatchFrameKey.
     [[nodiscard]] const ui::Widget* topKeyboardFrame() const;
     /// Runs a binding command's script. False when it has none, or it failed.
-    bool runBindingScript(const std::string& command, bool down);
+    bool runBindingScript(const std::string& command, bool down, int scriptRef = -2);
     /// Whether bindings.xml marks the command runOnUp.
     bool bindingRunsOnUp(const std::string& command);
 
@@ -411,6 +428,7 @@ private:
     static constexpr int kMouseButtons = 5;
     uint32_t pressedWid_[kMouseButtons] = {0, 0, 0};
     bool buttonDown_[kMouseButtons] = {false, false, false};
+    int mouseModifiers_[kMouseButtons] = {-1, -1, -1, -1, -1};
     /// Where each button went down, so a drag can be told from a click by how
     /// far the cursor has travelled since. Without a threshold every click is a
     /// one-pixel drag and nothing would ever reach OnClick.

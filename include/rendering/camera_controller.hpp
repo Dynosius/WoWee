@@ -709,7 +709,6 @@ private:
     float savedBarberPivot_ = 0.0f;
     bool ignoreSlopeLimit_ = false;
     float maxDistanceFactor_ = 1.0f;
-    bool xKeyWasDown = false;
     bool walking_ = false; // Persistent TOGGLERUN state; held Ctrl is a temporary override.
     bool runPace = false;
     bool autoRunning = false;

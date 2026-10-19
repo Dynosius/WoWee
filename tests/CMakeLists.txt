@@ -2291,135 +2291,14 @@ wowee_add_test(test_auction_slot_filter
 wowee_add_test(test_binding_file
     SOURCES test_binding_file.cpp)
 
-add_executable(check_keybindings
-    check_keybindings.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${TEST_COMMON_SOURCES})
-target_include_directories(check_keybindings PRIVATE ${TEST_INCLUDE_DIRS})
-target_link_libraries(check_keybindings PRIVATE imgui SDL3::SDL3)
-add_test(NAME keybindings COMMAND check_keybindings)
-register_test_target(check_keybindings)
-
-add_executable(check_autorun_binding
-    check_autorun_binding.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${TEST_COMMON_SOURCES})
-target_include_directories(check_autorun_binding PRIVATE ${TEST_INCLUDE_DIRS})
-target_link_libraries(check_autorun_binding PRIVATE imgui SDL3::SDL3)
-add_test(NAME autorun_binding COMMAND check_autorun_binding)
-register_test_target(check_autorun_binding)
-
-add_executable(check_recording_binding
-    check_recording_binding.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/framexml_emitter.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/xml_parser.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${TEST_COMMON_SOURCES})
-target_include_directories(check_recording_binding PRIVATE
-    ${TEST_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/extern/lua-5.1.5/src)
-target_link_libraries(check_recording_binding PRIVATE imgui SDL3::SDL3 lua51)
-add_test(NAME recording_binding COMMAND check_recording_binding)
-register_test_target(check_recording_binding)
-
-add_executable(check_input_edges
-    check_input_edges.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${TEST_COMMON_SOURCES})
-target_include_directories(check_input_edges PRIVATE ${TEST_INCLUDE_DIRS})
-target_link_libraries(check_input_edges PRIVATE imgui SDL3::SDL3)
-add_test(NAME input_edges COMMAND check_input_edges)
-register_test_target(check_input_edges)
-
-add_executable(check_physical_bindings
-    check_physical_bindings.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${TEST_COMMON_SOURCES})
-target_include_directories(check_physical_bindings PRIVATE ${TEST_INCLUDE_DIRS})
-target_link_libraries(check_physical_bindings PRIVATE imgui SDL3::SDL3)
-add_test(NAME physical_bindings COMMAND check_physical_bindings)
-register_test_target(check_physical_bindings)
-
-add_executable(check_binding_migration
-    check_binding_migration.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${TEST_COMMON_SOURCES})
-target_include_directories(check_binding_migration PRIVATE ${TEST_INCLUDE_DIRS})
-target_link_libraries(check_binding_migration PRIVATE imgui SDL3::SDL3)
-add_test(NAME binding_migration COMMAND check_binding_migration)
-register_test_target(check_binding_migration)
-
-# Compile the real camera input/speed phase without terrain/renderer linkage.
-# camera_input_seam.cpp uses the real controller declaration, camera,
-# Input, KeybindingManager and ImGui, not duplicated walk/reset logic.
-add_executable(check_camera_walk
-    check_camera_walk.cpp camera_input_seam.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/input.cpp
-    ${CMAKE_SOURCE_DIR}/src/rendering/camera.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${TEST_COMMON_SOURCES})
-target_compile_features(check_camera_walk PRIVATE cxx_std_20)
-target_include_directories(check_camera_walk PRIVATE
-    ${TEST_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(check_camera_walk PRIVATE imgui SDL3::SDL3)
-wowee_test_link_glm(check_camera_walk)
-add_test(NAME camera_walk COMMAND check_camera_walk)
-register_test_target(check_camera_walk)
-
-add_executable(check_camera_reset
-    check_camera_reset.cpp camera_input_seam.cpp
-    ${CMAKE_SOURCE_DIR}/src/core/input.cpp
-    ${CMAKE_SOURCE_DIR}/src/rendering/camera.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/framexml_emitter.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/xml_parser.cpp
-    ${TEST_COMMON_SOURCES})
-target_compile_features(check_camera_reset PRIVATE cxx_std_20)
-target_include_directories(check_camera_reset PRIVATE ${TEST_INCLUDE_DIRS}
-    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/extern/lua-5.1.5/src)
-target_link_libraries(check_camera_reset PRIVATE imgui SDL3::SDL3 lua51)
-wowee_test_link_glm(check_camera_reset)
-add_test(NAME camera_reset COMMAND check_camera_reset)
-register_test_target(check_camera_reset)
-
-add_executable(check_pad_routing check_pad_routing.cpp)
-target_compile_features(check_pad_routing PRIVATE cxx_std_20)
-add_test(NAME pad_routing COMMAND check_pad_routing)
-register_test_target(check_pad_routing)
-
-add_executable(check_pad_defaults check_pad_defaults.cpp)
-target_compile_features(check_pad_defaults PRIVATE cxx_std_20)
-add_test(NAME pad_defaults COMMAND check_pad_defaults)
-register_test_target(check_pad_defaults)
-
-add_executable(check_mouse_routing check_mouse_routing.cpp)
-target_compile_features(check_mouse_routing PRIVATE cxx_std_20)
-add_test(NAME mouse_routing COMMAND check_mouse_routing)
-register_test_target(check_mouse_routing)
-
-add_executable(check_wheel_routing check_wheel_routing.cpp)
-target_compile_features(check_wheel_routing PRIVATE cxx_std_20)
-add_test(NAME wheel_routing COMMAND check_wheel_routing)
-register_test_target(check_wheel_routing)
-
-add_executable(check_keyboard_capture
-    check_keyboard_capture.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/widget_tree.cpp
-    ${CMAKE_SOURCE_DIR}/src/ui/escape_action.cpp
-    ${TEST_COMMON_SOURCES})
-target_compile_features(check_keyboard_capture PRIVATE cxx_std_20)
-target_include_directories(check_keyboard_capture PRIVATE ${TEST_INCLUDE_DIRS})
-target_link_libraries(check_keyboard_capture PRIVATE imgui SDL3::SDL3)
-add_test(NAME keyboard_capture COMMAND check_keyboard_capture)
-register_test_target(check_keyboard_capture)
-
-add_executable(check_game_screen_commands
-    check_game_screen_commands.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/shapeshift_forms.cpp)
-target_compile_features(check_game_screen_commands PRIVATE cxx_std_20)
-target_include_directories(check_game_screen_commands PRIVATE ${TEST_INCLUDE_DIRS})
-add_test(NAME game_screen_commands COMMAND check_game_screen_commands)
-register_test_target(check_game_screen_commands)
+# Production manager and its authoritative controller defaults, without Lua.
+wowee_add_test(test_binding_commands
+    SOURCES test_binding_commands.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/gamepad_bindings.cpp
+        ${TEST_COMMON_SOURCES})
+target_compile_features(test_binding_commands PRIVATE cxx_std_20)
+target_link_libraries(test_binding_commands PRIVATE imgui SDL3::SDL3)
 
 # ── test_tab_target ──────────────────────────────────────────
 # Which units Tab and TargetNearestEnemy may pick: hostile and neutral alike,
@@ -2723,6 +2602,28 @@ if(NOT ANDROID)
     target_sources(test_game_replay PRIVATE test_game_replay_energize.cpp)
     register_test_target(test_game_replay)
     target_sources(test_game_replay PRIVATE test_game_replay_spell_logs.cpp)
+
+    # Same complete client objects as game_replay: never replace client classes
+    # with test implementations or copy an input-routing branch into a seam.
+    add_executable(test_input_integration test_input_integration.cpp
+        "$<FILTER:$<TARGET_OBJECTS:wowee>,EXCLUDE,/main([.]cpp)?[.]o(bj)?$>")
+    target_include_directories(test_input_integration PRIVATE ${TEST_INCLUDE_DIRS}
+        $<TARGET_PROPERTY:wowee,INCLUDE_DIRECTORIES>)
+    target_include_directories(test_input_integration SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+    target_compile_definitions(test_input_integration PRIVATE
+        WOWEE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        $<TARGET_PROPERTY:wowee,COMPILE_DEFINITIONS>)
+    target_compile_features(test_input_integration PRIVATE cxx_std_20)
+    target_link_libraries(test_input_integration PRIVATE catch2_main
+        $<TARGET_PROPERTY:wowee,LINK_LIBRARIES>)
+    wowee_test_link_glm(test_input_integration)
+    target_link_directories(test_input_integration PRIVATE
+        $<TARGET_PROPERTY:wowee,LINK_DIRECTORIES>)
+    target_link_options(test_input_integration PRIVATE
+        $<TARGET_PROPERTY:wowee,LINK_OPTIONS>)
+    add_dependencies(test_input_integration wowee)
+    add_test(NAME input_integration COMMAND test_input_integration)
+    register_test_target(test_input_integration)
 endif()
 
 # ── Sanitizers, once every test target exists ────────────────

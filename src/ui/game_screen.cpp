@@ -1372,14 +1372,9 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
     // WantCaptureKeyboard so that toggle keys like M, C, I still work when an
     // ImGui window (character panel, map, etc.) happens to have focus.
     {
-        // Two guards, because Tab reaches a focused box two ways. While one
-        // holds focus the probe answers; when the box's own OnTabPressed moves
-        // to the next field, the box that had it has let go by the time this
-        // is asked - and cycling between two fields of a form would have
-        // changed the player's target on every press.
-        if (!textFocus &&
-            !interfaceConsumedKey(ImGuiKey_Tab) &&
-            bindings.isCommandPressed("TARGETNEARESTENEMY")) {
+        // The manager filters consumed physical presses, not unrelated pad
+        // sources of the same command.
+        if (!textFocus && bindings.isCommandPressed("TARGETNEARESTENEMY")) {
             const auto& movement = gameHandler.getMovementInfo();
             gameHandler.tabTarget(movement.x, movement.y, movement.z);
         }
@@ -1393,7 +1388,9 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             // situation. resolveEscape is that question on its own, and its
             // test states each situation directly.
             EscapeState st;
-            st.interfaceConsumedKey  = interfaceConsumedKey(ImGuiKey_Escape);
+            // Capture was checked per source by the manager. A consumed
+            // keyboard Escape must not swallow a simultaneous controller B.
+            st.interfaceConsumedKey  = false;
             st.settingsWindowShown   = settingsPanel_.showSettingsWindow;
             // Either cursor. With the bags handed over an item is picked up
             // through FrameXML's, and Escape has to put that one down too -
@@ -1668,17 +1665,17 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             static_assert(bottomCommands.size() == game::GameHandler::SLOTS_PER_BAR);
             const auto& bar = gameHandler.getActionBar();
             for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i) {
-                const bool main = bindings.isCommandPressed(actionCommands[i]);
-                const bool bottom = bindings.isCommandPressed(bottomCommands[i]);
-                if (!main && !bottom) continue;
-                const int page = bottom ? ActionBarPanel::kBottomLeftActionPage : actionBarPanel_.getMainActionBarPage();
-                const int slot = ActionBarPanel::actionSlotForPage(page, i);
-                if (bar[slot].type == game::ActionBarSlot::SPELL && bar[slot].isReady()) {
-                    gameHandler.castSpell(bar[slot].id, gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0);
-                } else if (bar[slot].type == game::ActionBarSlot::ITEM && bar[slot].id != 0) {
-                    gameHandler.useItemById(bar[slot].id);
-                } else if (bar[slot].type == game::ActionBarSlot::MACRO) {
-                    chatPanel_.executeMacroText(gameHandler, gameHandler.getMacroText(bar[slot].id));
+                for (const bool bottom : {false, true}) {
+                    if (!bindings.isCommandPressed((bottom ? bottomCommands : actionCommands)[i])) continue;
+                    const int page = bottom ? ActionBarPanel::kBottomLeftActionPage : actionBarPanel_.getMainActionBarPage();
+                    const int slot = ActionBarPanel::actionSlotForPage(page, i);
+                    if (bar[slot].type == game::ActionBarSlot::SPELL && bar[slot].isReady()) {
+                        gameHandler.castSpell(bar[slot].id, gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0);
+                    } else if (bar[slot].type == game::ActionBarSlot::ITEM && bar[slot].id != 0) {
+                        gameHandler.useItemById(bar[slot].id);
+                    } else if (bar[slot].type == game::ActionBarSlot::MACRO) {
+                        chatPanel_.executeMacroText(gameHandler, gameHandler.getMacroText(bar[slot].id));
+                    }
                 }
             }
         }

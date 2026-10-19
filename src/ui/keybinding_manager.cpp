@@ -1,4 +1,5 @@
 #include "ui/keybinding_manager.hpp"
+#include "ui/gamepad_controls.hpp"
 #include "core/logger.hpp"
 #include "addons/binding_file.hpp"
 #include <SDL3/SDL.h>
@@ -17,7 +18,68 @@
 
 namespace wowee::ui {
 namespace {
-constexpr const char* legacySettingsMarker = "# wowee-native-settings-merged-v1";
+std::string trim(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    return value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
+}
+std::string baseKey(std::string key) {
+    bool stripped = true;
+    while (stripped) {
+        stripped = false;
+        for (const char* mod : {"ALT-", "CTRL-", "SHIFT-"}) {
+            if (key.starts_with(mod)) { key.erase(0, std::char_traits<char>::length(mod)); stripped = true; break; }
+        }
+    }
+    return key;
+}
+bool validCommand(const std::string& command) {
+    return !command.empty() && !command.starts_with("HEADER_") &&
+        std::none_of(command.begin(), command.end(), [](unsigned char c) { return c < 32 || c == 127; });
+}
+// Canonicalize aliases and modifier order, rejecting unknown physical identities.
+bool normalizeKey(std::string& key) {
+    using Manager = KeybindingManager;
+    std::string base = key;
+    bool shift = false, ctrl = false, alt = false;
+    bool stripped = true;
+    while (stripped) {
+        stripped = false;
+        for (auto [prefix, flag] : {std::pair{"ALT-", &alt}, {"CTRL-", &ctrl}, {"SHIFT-", &shift}}) {
+            if (base.starts_with(prefix)) {
+                if (*flag) return false;
+                *flag = true;
+                base.erase(0, std::char_traits<char>::length(prefix));
+                stripped = true;
+                break;
+            }
+        }
+    }
+    if (base.empty()) return false;
+    if (Manager::isControllerKey(base)) {
+        bool found = false;
+        for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; ++i)
+            if (base == padKeyName(static_cast<SDL_GamepadButton>(i))) { found = true; break; }
+        if (!found) return false;
+    } else if (base != "MOUSEWHEELUP" && base != "MOUSEWHEELDOWN") {
+        const auto physical = Manager::keyFromName(base);
+        if (physical == ImGuiKey_None || Manager::keyName(physical).empty()) return false;
+        base = Manager::keyName(physical);
+    }
+    key = Manager::modifiedKey(base, shift, ctrl, alt);
+    return true;
+}
+bool replaceFile(const std::filesystem::path& temp, const std::filesystem::path& file) {
+#ifdef _WIN32
+    if (MoveFileExW(temp.c_str(), file.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return true;
+#else
+    std::error_code ec;
+    std::filesystem::rename(temp, file, ec);
+    if (!ec) return true;
+#endif
+    LOG_WARNING("Could not replace bindings at ", file.string(), "; previous file retained");
+    return false;
+}
 struct ActionBinding { const char* command; const char* legacy; const char* label; const char* key; const char* secondKey = ""; };
 constexpr ActionBinding actions[] = {
     {"TOGGLECHARACTER0", "toggle_character_screen", "Character Screen", "C"},
@@ -49,12 +111,26 @@ int& slashEchoPumps() { static int pumps = 0; return pumps; }
 }
 
 KeybindingManager& KeybindingManager::getInstance() { static KeybindingManager instance; return instance; }
-KeybindingManager::KeybindingManager() { initializeDefaults(); }
+KeybindingManager::KeybindingManager() { resetToDefaults(); }
 const char* KeybindingManager::commandForAction(Action action) {
     const auto i = static_cast<size_t>(action);
     return i < std::size(actions) ? actions[i].command : "";
 }
-void KeybindingManager::initializeDefaults() {
+void KeybindingManager::initializeDefaults(Device device) {
+    if (device == Device::Controller) {
+        for (const auto rows : {padBindings(), padExtraBindings()}) {
+            for (const auto& row : rows) {
+                if (row.command && *row.command) setBinding(padKeyName(row.button), row.command);
+            }
+        }
+        // The scheme-only left bumper selects the existing bottom-left bar.
+        for (const auto& row : padBindings()) {
+            const std::string command = row.command ? row.command : "";
+            if (command.starts_with("ACTIONBUTTON"))
+                setBinding("SHIFT-" + std::string(padKeyName(row.button)), "MULTIACTIONBAR1BUTTON" + command.substr(12));
+        }
+        return;
+    }
     for (const auto& action : actions) bindings_[action.command] = {action.key, action.secondKey};
     const Bindings defaults = {
         {"MOVEFORWARD", {"W", "UP"}}, {"MOVEBACKWARD", {"S", "DOWN"}},
@@ -76,7 +152,14 @@ void KeybindingManager::initializeDefaults() {
         if (i <= 8) bindings_["SHAPESHIFTBUTTON" + std::to_string(i)] = {"CTRL-" + key, ""};
     }
 }
-void KeybindingManager::resetToDefaults() { bindings_.clear(); initializeDefaults(); }
+void KeybindingManager::resetToDefaults() {
+    resetToDefaults(Device::KeyboardMouse);
+    resetToDefaults(Device::Controller);
+}
+void KeybindingManager::resetToDefaults(Device device) {
+    bindings(device).clear();
+    initializeDefaults(device);
+}
 
 std::string KeybindingManager::keyName(ImGuiKey key) {
     switch (key) {
@@ -191,19 +274,16 @@ std::string KeybindingManager::modifiedKey(std::string key, bool shift, bool ctr
     return key;
 }
 
+KeybindingManager::Device KeybindingManager::deviceForKey(const std::string& key) {
+    return baseKey(key).starts_with("PAD") ? Device::Controller : Device::KeyboardMouse;
+}
 bool KeybindingManager::setBinding(const std::string& requestedKey, const std::string& command) {
     std::string key = requestedKey;
-    std::string base = key;
-    for (const char* mod : {"ALT-", "CTRL-", "SHIFT-"}) if (base.starts_with(mod)) base.erase(0, std::char_traits<char>::length(mod));
-    if (key.find_first_of("\r\n\t") != std::string::npos || base.empty()) return false;
-    const bool pad = base.starts_with("PAD") && base.size() > 3 && base.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == std::string::npos;
-    const auto physical = keyFromName(base);
-    if (physical == ImGuiKey_None && !pad && base != "MOUSEWHEELUP" && base != "MOUSEWHEELDOWN") return false;
-    if (physical != ImGuiKey_None) key.replace(key.size() - base.size(), base.size(), keyName(physical));
-    if (command.starts_with("HEADER_") || command.find_first_of("\r\n\t=") != std::string::npos) return false;
-    for (auto& [name, slots] : bindings_) for (auto& slot : slots) if (slot == key) slot.clear();
+    if (!normalizeKey(key) || (!command.empty() && !validCommand(command))) return false;
+    auto& deviceBindings = bindings(deviceForKey(key));
+    for (auto& [name, slots] : deviceBindings) for (auto& slot : slots) if (slot == key) slot.clear();
     if (!command.empty()) {
-        auto& slots = bindings_[command];
+        auto& slots = deviceBindings[command];
         (slots[0].empty() ? slots[0] : slots[1]) = key;
     }
     return true;
@@ -211,100 +291,139 @@ bool KeybindingManager::setBinding(const std::string& requestedKey, const std::s
 bool KeybindingManager::loadBindings(const std::string& path) {
     std::ifstream in(path);
     if (!in) { LOG_WARNING("Could not read bindings from ", path); return false; }
-    const auto saved = wowee::addons::parseSavedBindings(in);
-    if (in.bad()) { LOG_WARNING("Could not read bindings from ", path); return false; }
+    const auto saved = wowee::addons::parseBindingFile(in);
+    if (!saved.valid) { LOG_WARNING("Could not convert bindings from ", path); return false; }
 
-    Bindings legacyDefaults;
-    in.clear();
-    in.seekg(0);
-    std::string line;
-    while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (!line.ends_with(',') || line.find('\t') != std::string::npos) continue;
-        const auto command = line.substr(0, line.find('='));
-        const auto original = bindings_.find(command);
-        const auto row = saved.find(command);
-        if (original == bindings_.end() || row == saved.end() ||
-            row->second[0].empty() || !row->second[1].empty()) continue;
-        const auto& defaults = original->second;
-        legacyDefaults[command][1] = defaults[1] == row->second[0] ? defaults[0] : defaults[1];
-    }
-    // Clear every saved command first: unbound slots must replace defaults too.
-    for (const auto& [command, slots] : saved) bindings_[command] = {};
-    for (const auto& [command, slots] : saved) {
-        for (size_t i = 0; i < slots.size(); ++i) {
-            if (slots[i].empty()) continue;
-            if (setBinding(slots[i], command)) {
-                // Preserve a secondary-only assignment rather than compacting it.
-                auto& target = bindings_[command];
-                if (i == 1 && slots[0].empty()) std::swap(target[0], target[1]);
+    // Validate everything before publishing anything, including explicit empties.
+    auto candidate = *this;
+    candidate.resetToDefaults();
+    const auto defaults = candidate.bindings_;
+    const auto apply = [&](const Bindings& rows, Device device) {
+        for (const auto& [command, slots] : rows) {
+            if (!validCommand(command)) return false;
+            if (saved.versioned) candidate.bindings(device)[command] = {};
+            else {
+                // Master mixed device identities in the same two slots. An empty
+                // row unbinds the desktop command, not an absent controller row.
+                if ((slots[0].empty() && slots[1].empty()) ||
+                    std::any_of(slots.begin(), slots.end(), [](const auto& key) { return !key.empty() && !isControllerKey(key); }))
+                    candidate.bindings_[command] = {};
+                for (const auto& key : slots)
+                    if (!key.empty() && isControllerKey(key)) candidate.controllerBindings_[command] = {};
             }
         }
+        for (const auto& [command, slots] : rows) {
+            for (size_t i = 0; i < slots.size(); ++i) {
+                if (slots[i].empty()) continue;
+                std::string key = slots[i];
+                if (!normalizeKey(key) || (saved.versioned && deviceForKey(key) != device)) return false;
+                if (!candidate.setBinding(key, command)) return false;
+                auto& target = candidate.bindings(deviceForKey(key))[command];
+                // Keep explicit slot identity; old mixed-device rows instead
+                // compact independently into their own device's available slots.
+                if (saved.versioned || (i == 1 && slots[0].empty())) {
+                    for (auto& slot : target) if (slot == key) slot.clear();
+                    target[i] = key;
+                }
+            }
+        }
+        return true;
+    };
+    if (!apply(saved.keyboardMouse, Device::KeyboardMouse) || !apply(saved.controller, Device::Controller)) {
+        LOG_WARNING("Invalid binding assignment in ", path);
+        return false;
     }
-    // Recover only unclaimed defaults after all saved keys have been applied.
-    for (const auto& [command, slots] : legacyDefaults) {
-        if (!slots[1].empty() && commandForKey(slots[1]).empty()) setBinding(slots[1], command);
+    // The old comma writer could not distinguish absent alternatives from an
+    // intentional empty second slot. Recover only still-unclaimed defaults.
+    for (const auto& command : saved.implicitSecondary) {
+        const auto original = defaults.find(command);
+        if (original == defaults.end()) continue;
+        auto& slots = candidate.bindings_[command];
+        const auto& keys = original->second;
+        const auto& alternative = slots[0] == keys[1] ? keys[0] : keys[1];
+        if (!alternative.empty() && candidate.commandForKey(alternative).empty()) {
+            const auto empty = std::find(slots.begin(), slots.end(), "");
+            if (empty != slots.end()) *empty = alternative;
+        }
     }
-    in.clear();
-    in.seekg(0);
-    std::string header;
-    std::getline(in, header);
-    if (!header.empty() && header.back() == '\r') header.pop_back();
-    legacySettingsMigrated_ = legacySettingsMigrated_ || header == legacySettingsMarker;
+    bindings_ = std::move(candidate.bindings_);
+    controllerBindings_ = std::move(candidate.controllerBindings_);
+    if (saved.nativeSettingsMerged || saved.versioned) migratedPaths_.insert(path);
     return true;
 }
 bool KeybindingManager::loadBindingsWithLegacy(const std::string& path, const std::string& legacyPath) {
     std::error_code ec;
     const bool exists = std::filesystem::exists(path, ec);
-    if (ec || (exists && !loadBindings(path))) return false;
-    if (legacySettingsMigrated_) return true;
+    if (ec) { LOG_WARNING("Could not inspect bindings at ", path, ": ", ec.message()); return false; }
+    if (exists && !loadBindings(path)) return false;
+    if (migratedPaths_.contains(path)) return true;
     const bool legacyExists = std::filesystem::exists(legacyPath, ec);
-    if (ec || (legacyExists && !loadFromConfigFile(legacyPath))) return false;
-    // Settings used to override FrameXML's native actions, including explicit
-    // unbinds. Merge once, then let the unified store win. Keep this guard even
-    // if saving fails: Defaults/Cancel must not resurrect legacy assignments.
-    // The disk marker is published only together with a successful atomic save.
-    legacySettingsMigrated_ = true;
-    return saveBindings(path);
+    if (ec) { LOG_WARNING("Could not inspect legacy bindings at ", legacyPath, ": ", ec.message()); return false; }
+    if (legacyExists && !loadFromConfigFile(legacyPath)) return false;
+    // A failed save must not suppress legacy settings on the next reload.
+    if (!saveBindings(path)) return false;
+    migratedPaths_.insert(path);
+    return true;
 }
 bool KeybindingManager::saveBindings(const std::string& path) const {
+    // Mutable legacy query access is retained for API compatibility; validate it
+    // too, rather than emitting a file which cannot be read back safely.
+    for (const auto device : {Device::KeyboardMouse, Device::Controller}) {
+        std::set<std::string> assigned;
+        for (const auto& [command, slots] : bindings(device)) {
+            if (!validCommand(command)) { LOG_WARNING("Invalid binding command while saving ", path); return false; }
+            for (const auto& key : slots) {
+                if (key.empty()) continue;
+                std::string normalized = key;
+                if (!normalizeKey(normalized) || normalized != key || deviceForKey(key) != device || !assigned.insert(key).second) {
+                    LOG_WARNING("Invalid binding key while saving ", path, ": ", key);
+                    return false;
+                }
+            }
+        }
+    }
     const std::filesystem::path file(path), temp(path + ".tmp");
     std::error_code ec;
     if (!file.parent_path().empty()) std::filesystem::create_directories(file.parent_path(), ec);
+    if (ec) { LOG_WARNING("Could not create bindings directory: ", ec.message()); return false; }
     std::ofstream out(temp, std::ios::trunc);
-    if (legacySettingsMigrated_) out << legacySettingsMarker << '\n';
-    // Tab is unambiguous even when either key is ',' or '='. Read legacy commas too.
-    for (const auto& [command, slots] : bindings_) out << command << '=' << slots[0] << '\t' << slots[1] << '\n';
+    out << wowee::addons::bindingFileVersion << '\n';
+    for (const auto device : {Device::KeyboardMouse, Device::Controller}) {
+        out << (device == Device::Controller ? "[Controller]\n" : "[KeyboardMouse]\n");
+        for (const auto& [command, slots] : bindings(device))
+            out << command << '\t' << slots[0] << '\t' << slots[1] << '\n';
+    }
     out.close();
     if (!out) { LOG_WARNING("Could not write bindings to ", temp.string()); return false; }
-#ifdef _WIN32
-    if (MoveFileExW(temp.c_str(), file.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return true;
-#else
-    std::filesystem::rename(temp, file, ec);
-    if (!ec) return true;
-#endif
-    LOG_WARNING("Could not replace bindings at ", path, "; previous file retained");
-    return false;
+    return replaceFile(temp, file);
 }
-std::string KeybindingManager::commandForKey(const std::string& key) const {
-    if (key.empty()) return "";
-    for (const auto& [command, slots] : bindings_) if (slots[0] == key || slots[1] == key) return command;
-    return "";
+std::pair<std::string, std::string> KeybindingManager::resolve(const std::string& requestedKey, bool fallback) const {
+    std::string key = requestedKey;
+    if (!normalizeKey(key)) return {};
+    const auto& rows = bindings(deviceForKey(key));
+    const auto exact = [&](const std::string& identity) -> std::pair<std::string, std::string> {
+        for (const auto& [command, slots] : rows)
+            if (slots[0] == identity || slots[1] == identity) return {identity, command};
+        return {};
+    };
+    auto matched = exact(key);
+    const auto base = baseKey(key);
+    return matched.second.empty() && fallback && base != key ? exact(base) : matched;
 }
+std::string KeybindingManager::commandForKey(const std::string& key) const { return resolve(key, false).second; }
+std::string KeybindingManager::resolveBindingKey(const std::string& key) const { return resolve(key, true).first; }
+std::string KeybindingManager::resolveCommand(const std::string& key) const { return resolve(key, true).second; }
 void KeybindingManager::beginInputFrame() {
-    pressedKeys_.clear();
-    virtualPressed_.clear();
+    pressedBindings_.clear();
     virtualCommandPressed_.clear();
-    virtualKeys_["MOUSEWHEELUP"] = virtualKeys_["MOUSEWHEELDOWN"] = false;
 }
 void KeybindingManager::processInputEvent(const SDL_Event& event) {
     nativeInput_ = true;
     if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         inputFocused_ = false;
         down_.fill(false);
-        pressedKeys_.clear();
-        virtualKeys_.clear();
-        virtualPressed_.clear();
+        heldBindings_.clear();
+        pressedBindings_.clear();
         virtualCommands_.clear();
         virtualCommandPressed_.clear();
         return;
@@ -332,14 +451,18 @@ void KeybindingManager::processInputEvent(const SDL_Event& event) {
         alt = down_[ImGuiKey_LeftAlt - ImGuiKey_NamedKey_BEGIN] || down_[ImGuiKey_RightAlt - ImGuiKey_NamedKey_BEGIN];
     }
     if (key == ImGuiKey_None) return;
+    const bool wasDown = down_[key - ImGuiKey_NamedKey_BEGIN];
     down_[key - ImGuiKey_NamedKey_BEGIN] = down;
-    // Repeats and modifier-only changes never manufacture another action-key edge.
-    // Keep the chord even if its modifiers or key are released later in this pump.
-    if (down && !repeat && !interfaceTakingTypedInput() && !ImGui::GetIO().WantTextInput) {
-        const auto base = keyName(key);
-        const auto chord = modifiedKey(base, shift, ctrl, alt);
-        // Resolve fallback at the edge, before modifiers can change in this pump.
-        pressedKeys_.insert(commandForKey(chord).empty() ? base : chord);
+    const auto base = keyName(key);
+    if (!down) { heldBindings_.erase(base); return; }
+    // Resolve once at queue position, not again after modifiers/bindings change.
+    // Both the command and physical identity survive a down/up within this pump.
+    if (!wasDown && !repeat) {
+        const auto command = resolveCommand(modifiedKey(base, shift, ctrl, alt));
+        const bool blocked = interfaceTakingTypedInput() || ImGui::GetIO().WantTextInput || interfaceConsumedKey(key) ||
+            (base.starts_with("BUTTON") && ImGui::GetIO().WantCaptureMouse);
+        heldBindings_[base] = blocked ? "" : command;
+        if (!blocked && !command.empty()) pressedBindings_.emplace(base, command);
     }
 }
 void KeybindingManager::updateInput() {
@@ -360,119 +483,133 @@ void KeybindingManager::updateInput() {
         const auto key = keyFromName(mouseButtonNameFromSDL(button));
         next[key - ImGuiKey_NamedKey_BEGIN] = (mouse & SDL_BUTTON_MASK(button)) != 0;
     }
+    // Polling only reconciles missed transitions. Existing presses retain the
+    // recipient chosen by their event, even if modifiers or assignments changed.
+    const bool shift = next[ImGuiKey_LeftShift - ImGuiKey_NamedKey_BEGIN] || next[ImGuiKey_RightShift - ImGuiKey_NamedKey_BEGIN];
+    const bool ctrl = next[ImGuiKey_LeftCtrl - ImGuiKey_NamedKey_BEGIN] || next[ImGuiKey_RightCtrl - ImGuiKey_NamedKey_BEGIN];
+    const bool alt = next[ImGuiKey_LeftAlt - ImGuiKey_NamedKey_BEGIN] || next[ImGuiKey_RightAlt - ImGuiKey_NamedKey_BEGIN];
+    for (int i = 0; i < ImGuiKey_NamedKey_COUNT; ++i) {
+        const auto base = keyName(static_cast<ImGuiKey>(i + ImGuiKey_NamedKey_BEGIN));
+        if (base.empty()) continue;
+        if (!next[i]) heldBindings_.erase(base);
+        else if (!down_[i]) {
+            const bool blocked = interfaceTakingTypedInput() || ImGui::GetIO().WantTextInput ||
+                interfaceConsumedKey(static_cast<ImGuiKey>(i + ImGuiKey_NamedKey_BEGIN)) ||
+                (base.starts_with("BUTTON") && ImGui::GetIO().WantCaptureMouse);
+            heldBindings_[base] = blocked ? "" : resolveCommand(modifiedKey(base, shift, ctrl, alt));
+        }
+    }
     down_ = next;
 }
-void KeybindingManager::setVirtualKey(const std::string& key, bool down) {
-    if (down && !virtualKeys_[key]) virtualPressed_.insert(key);
-    virtualKeys_[key] = down;
-}
 void KeybindingManager::setVirtualCommand(const std::string& command, const std::string& source, bool down) {
-    if (command.empty()) return;
+    if (command.empty() || (down && !inputFocused_)) return;
     auto& sources = virtualCommands_[command];
     if (down && sources.empty()) virtualCommandPressed_.insert(command);
     if (down) sources.insert(source); else sources.erase(source);
-    if (sources.empty()) virtualCommandPressed_.erase(command);
+    // A release must not erase an edge from earlier in the same pump.
+    if (sources.empty()) virtualCommands_.erase(command);
 }
 bool KeybindingManager::keyActive(const std::string& binding, bool pressed, bool repeat) const {
-    if (binding.empty()) return false;
-    std::string base = binding;
-    bool alt = false, ctrl = false, shift = false;
-    for (auto [prefix, flag] : {std::pair{"ALT-", &alt}, {"CTRL-", &ctrl}, {"SHIFT-", &shift}}) {
-        if (base.starts_with(prefix)) { *flag = true; base.erase(0, std::char_traits<char>::length(prefix)); }
-    }
+    if (binding.empty() || nativeInput_) return false;
+    const auto base = baseKey(binding);
+    const auto key = keyFromName(base);
+    if (key == ImGuiKey_None || interfaceConsumedKey(key)) return false;
     const auto& io = ImGui::GetIO();
-    const ImGuiKey key = keyFromName(base);
-    if (key != ImGuiKey_None && interfaceConsumedKey(key)) return false;
-    if ((base.starts_with("BUTTON") || base.starts_with("MOUSEWHEEL")) && io.WantCaptureMouse) return false;
-    if (pressed && nativeInput_ && pressedKeys_.count(binding)) return true;
-    const auto held = [&](ImGuiKey key) { return nativeInput_ ? down_[key - ImGuiKey_NamedKey_BEGIN] : ImGui::IsKeyDown(key); };
-    const bool actualShift = nativeInput_ ? held(ImGuiKey_LeftShift) || held(ImGuiKey_RightShift) : io.KeyShift;
-    const bool actualCtrl = nativeInput_ ? held(ImGuiKey_LeftCtrl) || held(ImGuiKey_RightCtrl) : io.KeyCtrl;
-    const bool actualAlt = nativeInput_ ? held(ImGuiKey_LeftAlt) || held(ImGuiKey_RightAlt) : io.KeyAlt;
-    if (shift != actualShift || ctrl != actualCtrl || alt != actualAlt) {
-        // Unmodified movement still works with modifiers unless that chord was rebound.
-        if (shift || ctrl || alt || !commandForKey(modifiedKey(base, actualShift, actualCtrl, actualAlt)).empty()) return false;
-    }
-    const auto v = virtualKeys_.find(base);
-    if (v != virtualKeys_.end() && (pressed ? virtualPressed_.count(base) != 0 : v->second)) return true;
-    if (key == ImGuiKey_None) return false;
-    if (!pressed) return held(key);
-    if (nativeInput_) return false;
-    return ImGui::IsKeyPressed(key, repeat);
+    if (base.starts_with("BUTTON") && io.WantCaptureMouse) return false;
+    if (resolveBindingKey(modifiedKey(base, io.KeyShift, io.KeyCtrl, io.KeyAlt)) != binding) return false;
+    return pressed ? ImGui::IsKeyPressed(key, repeat) : ImGui::IsKeyDown(key);
+}
+namespace {
+bool inputAvailable(const std::string& key) {
+    const auto base = baseKey(key);
+    const auto physical = KeybindingManager::keyFromName(base);
+    if (physical != ImGuiKey_None && interfaceConsumedKey(physical)) return false;
+    return !(base.starts_with("BUTTON") || base.starts_with("MOUSEWHEEL")) || !ImGui::GetIO().WantCaptureMouse;
+}
+template<class Sources>
+bool hasCommand(const Sources& sources, const std::string& command) {
+    return std::any_of(sources.begin(), sources.end(), [&](const auto& source) {
+        return source.second == command && inputAvailable(source.first);
+    });
+}
 }
 bool KeybindingManager::isCommandPressed(const std::string& command, bool repeat) const {
-    if (interfaceTakingTypedInput() || ImGui::GetIO().WantTextInput) return false;
-    if (virtualCommandPressed_.count(command)) return true;
+    if (command.empty() || !inputFocused_ || interfaceTakingTypedInput() || ImGui::GetIO().WantTextInput) return false;
+    if (virtualCommandPressed_.count(command) || hasCommand(pressedBindings_, command)) return true;
+    if (nativeInput_) return false;
     const auto it = bindings_.find(command);
-    if (it == bindings_.end()) return false;
-    return keyActive(it->second[0], true, repeat) || keyActive(it->second[1], true, repeat);
+    return it != bindings_.end() && (keyActive(it->second[0], true, repeat) || keyActive(it->second[1], true, repeat));
 }
 bool KeybindingManager::isCommandDown(const std::string& command) const {
-    if (interfaceTakingTypedInput() || ImGui::GetIO().WantTextInput) return false;
+    if (command.empty() || !inputFocused_ || interfaceTakingTypedInput() || ImGui::GetIO().WantTextInput) return false;
     const auto v = virtualCommands_.find(command);
-    if (v != virtualCommands_.end() && !v->second.empty()) return true;
+    if ((v != virtualCommands_.end() && !v->second.empty()) || hasCommand(heldBindings_, command)) return true;
+    if (nativeInput_) return false;
     const auto it = bindings_.find(command);
     return it != bindings_.end() && (keyActive(it->second[0], false) || keyActive(it->second[1], false));
 }
 bool KeybindingManager::isActionPressed(Action action, bool repeat) { return isCommandPressed(commandForAction(action), repeat); }
-ImGuiKey KeybindingManager::getKeyForAction(Action action) const {
-    const auto it = bindings_.find(commandForAction(action));
-    return it == bindings_.end() ? ImGuiKey_None : keyFromName(it->second[0].empty() ? it->second[1] : it->second[0]);
-}
-void KeybindingManager::setKeyForAction(Action action, ImGuiKey key) {
-    const std::string command = commandForAction(action);
-    bindings_[command] = {};
-    if (key != ImGuiKey_None) setBinding(keyName(key), command);
-}
 
-// Compatibility import/export for old settings and standalone tools only.
-// The running UI saves bindings.cfg, never a second keybinding section.
+// Import master's native settings; only bindings.cfg is written now.
 bool KeybindingManager::loadFromConfigFile(const std::string& path) {
     std::ifstream in(path);
-    if (!in) return false;
-    const auto previous = bindings_;
+    if (!in) { LOG_WARNING("Could not read legacy bindings from ", path); return false; }
+    auto candidate = *this;
+    KeybindingManager defaults;
+    Bindings rows;
+    std::set<std::string> singleSlots;
     std::string line;
     bool section = false;
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (line == "[Keybindings]") { section = true; continue; }
-        if (!line.empty() && line[0] == '[') { section = false; continue; }
+        const auto trimmed = trim(line);
+        if (trimmed.empty() || trimmed[0] == '#' || trimmed[0] == ';') continue;
+        if (trimmed == "[Keybindings]") { section = true; continue; }
+        if (trimmed[0] == '[') { section = false; continue; }
         if (!section) continue;
         const size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
-        std::string command = line.substr(0, eq);
+        std::string command = trim(line.substr(0, eq));
         if (command == "toggle_quest_log") command = "toggle_quests";
         for (const auto& action : actions) if (command == action.legacy) { command = action.command; break; }
-        std::string keys = line.substr(eq + 1);
+        // This is a native settings section, not the addon binding file. Unknown
+        // future settings and comments must never claim another command's key.
+        if (!defaults.bindings_.contains(command)) continue;
+        const auto keys = line.substr(eq + 1);
         const auto sep = keys.find('\t');
-        std::array<std::string, 2> slots{keys.substr(0, sep), sep == std::string::npos ? "" : keys.substr(sep + 1)};
-        bindings_[command] = {};
+        auto slots = std::array<std::string, 2>{trim(keys.substr(0, sep)), sep == std::string::npos ? "" : trim(keys.substr(sep + 1))};
         for (auto& key : slots) {
-            if (key.empty() || key == "None") continue;
             key = upper(key);
-            const auto imgui = keyFromName(key);
-            if (imgui != ImGuiKey_None) key = keyName(imgui);
-            setBinding(key, command);
+            if (key == "NONE") key.clear();
+            if (!key.empty() && (!normalizeKey(key) || isControllerKey(key))) {
+                LOG_WARNING("Invalid legacy binding for ", command, " in ", path);
+                return false;
+            }
+        }
+        singleSlots.erase(command);
+        if (sep == std::string::npos && !slots[0].empty()) singleSlots.insert(command);
+        rows[command] = slots;
+    }
+    if (in.bad()) { LOG_WARNING("Could not read legacy bindings from ", path); return false; }
+    for (const auto& [command, slots] : rows) candidate.bindings_[command] = {};
+    for (const auto& [command, slots] : rows) {
+        for (size_t i = 0; i < slots.size(); ++i) {
+            if (slots[i].empty()) continue;
+            candidate.setBinding(slots[i], command);
+            auto& target = candidate.bindings_[command];
+            for (auto& slot : target) if (slot == slots[i]) slot.clear();
+            target[i] = slots[i];
         }
     }
-    if (in.bad()) { bindings_ = previous; return false; }
+    for (const auto& command : singleSlots) {
+        auto& slots = candidate.bindings_[command];
+        const auto& keys = defaults.bindings_[command];
+        const auto& alternative = slots[0] == keys[1] ? keys[0] : keys[1];
+        if (!alternative.empty() && candidate.commandForKey(alternative).empty() && slots[1].empty()) slots[1] = alternative;
+    }
+    bindings_ = std::move(candidate.bindings_);
     return true;
 }
-void KeybindingManager::saveToConfigFile(const std::string& path) const {
-    std::ifstream in(path);
-    std::string content, line;
-    bool section = false;
-    while (std::getline(in, line)) {
-        if (line == "[Keybindings]") { section = true; continue; }
-        if (!line.empty() && line[0] == '[') section = false;
-        if (!section) content += line + "\n";
-    }
-    content += "[Keybindings]\n";
-    for (const auto& [command, slots] : bindings_) content += command + "=" + slots[0] + "\t" + slots[1] + "\n";
-    std::ofstream out(path);
-    if (!(out << content)) LOG_ERROR("Could not save bindings to ", path);
-}
-
 bool interfaceTakingTypedInput() { const auto& probe = typedInputProbe(); return probe && probe(); }
 void setTypedInputProbe(std::function<bool()> probe) { typedInputProbe() = std::move(probe); }
 bool interfaceConsumedKey(ImGuiKey key) { const auto& keys = consumedKeys(); return std::find(keys.begin(), keys.end(), key) != keys.end(); }
@@ -486,3 +623,26 @@ bool consumeChatSlashEcho(const char* text) {
 }
 void ageChatSlashEcho() { if (slashEchoPumps() > 0) --slashEchoPumps(); }
 } // namespace wowee::ui
+
+namespace wowee::addons {
+
+bool clientActsOnBinding(const std::string& command) {
+    using Manager = wowee::ui::KeybindingManager;
+    for (int i = 0; i < Manager::getActionCount(); ++i)
+        if (command == Manager::commandForAction(static_cast<Manager::Action>(i))) return true;
+    static constexpr const char* native[] = {
+        "MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "TURNRIGHT", "STRAFELEFT", "STRAFERIGHT",
+        "JUMP", "SITORSTAND", "TOGGLERUN", "OPENCHATSLASH", "TARGETNEARESTENEMY",
+        "SCREENSHOT", "WOWEETOGGLERECORDING", "TOGGLESHEATH", "FRIENDNAMEPLATES", "CAMERAZOOMIN", "CAMERAZOOMOUT",
+        "WOWEERESETCAMERA",
+    };
+    for (const char* name : native) if (command == name) return true;
+    for (const auto& [prefix, count] : {std::pair{"ACTIONBUTTON", 12},
+             {"SHAPESHIFTBUTTON", 8}, {"MULTIACTIONBAR1BUTTON", 12}})
+        for (int i = 1; i <= count; ++i)
+            if (command == prefix + std::to_string(i)) return true;
+    return false;
+}
+
+} // namespace wowee::addons
+

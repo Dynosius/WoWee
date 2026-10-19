@@ -171,8 +171,8 @@ public:
     /// pointer mode, because there is nowhere to put the cursor.
     void setWindow(SDL_Window* window) { window_ = window; }
 
-    /// Where button commands and scripts are resolved. Without one, only
-    /// scheme-only roles (Back and the bumper) remain active.
+    /// Where UI capture and Lua scripts are dispatched. Without one, native
+    /// button commands still resolve through the authoritative manager.
     void setKeyRouter(PadKeyRouter router) { keyRouter_ = std::move(router); }
 
     /// How far the pointer travels this frame for a given push of the stick.

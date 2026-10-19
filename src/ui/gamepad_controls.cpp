@@ -3,6 +3,7 @@
 #include "core/gamepad.hpp"
 #include "core/input.hpp"
 #include "ui/keybinding_manager.hpp"
+#include "addons/lua_api_registrations.hpp"
 #include "core/logger.hpp"
 #include "rendering/camera_controller.hpp"
 
@@ -261,7 +262,7 @@ void GamepadControls::routeButtons() {
             routes_[i] = {};
             return;
         }
-        if (wasDown || !keyRouter_ || !*name) return;
+        if (wasDown || !*name) return;
         if (pointerMode_ && (button == SDL_GAMEPAD_BUTTON_SOUTH || button == SDL_GAMEPAD_BUTTON_WEST)) {
             routes_[i].kind = PadKeyAnswer::Kind::Taken;
             return;
@@ -269,7 +270,14 @@ void GamepadControls::routeButtons() {
         routes_[i].key = button != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER &&
                          schemeHeld(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)
             ? "SHIFT-" + std::string(name) : std::string(name);
-        const auto answer = keyRouter_(routes_[i].key.c_str(), true);
+        PadKeyAnswer answer;
+        if (keyRouter_) answer = keyRouter_(routes_[i].key.c_str(), true);
+        if (answer.kind == PadKeyAnswer::Kind::Unbound) {
+            answer.command = bindings.resolveCommand(routes_[i].key);
+            if (!answer.command.empty())
+                answer.kind = addons::clientActsOnBinding(answer.command)
+                    ? PadKeyAnswer::Kind::Command : PadKeyAnswer::Kind::Taken;
+        }
         routes_[i].kind = answer.kind;
         routes_[i].command = answer.command;
     };
@@ -379,7 +387,7 @@ void GamepadControls::update(float deltaTime) {
     // touchpad should still move the cursor, which is what it does on the
     // laptop this is being typed on, and at the login screen the box being
     // typed into is the very thing a pointer is needed to leave.
-    const bool typing = io.WantTextInput;
+    const bool typing = io.WantTextInput || interfaceTakingTypedInput();
 
     if (!live || typing) {
         releaseKeys();

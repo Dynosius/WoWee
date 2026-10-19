@@ -11,7 +11,6 @@
 #include "ui/settings_panel.hpp"
 #include "ui/gamepad_controls.hpp"
 
-#include <span>
 #include "core/config_paths.hpp"
 #include <cctype>
 #include <filesystem>
@@ -1564,39 +1563,15 @@ static int lua_BeginTrade(lua_State* L) {
 
 namespace {
 
-// Assignments live in the same manager gameplay reads; FrameXML owns the commands.
-auto& bindingKeys() { return wowee::ui::KeybindingManager::getInstance().bindings(); }
+// Constructing defaults needs no Lua; restoring saved user settings is separate.
 std::string bindingsFilePath() { return core::getConfigRoot() + "/bindings.cfg"; }
 
-void seedBindingDefaults(bool withSaved = true, bool reset = false) {
+void seedBindingDefaults() {
     static bool seeded = false;
-    if (seeded && !reset) return;
+    if (seeded) return;
     seeded = true;
-    auto& manager = wowee::ui::KeybindingManager::getInstance();
-    if (reset) manager.resetToDefaults();
-    const auto seedPad = [](std::span<const wowee::ui::PadBinding> rows) {
-        for (const auto& row : rows) {
-            if (!row.command || !*row.command) continue;
-            const char* key = wowee::ui::padKeyName(row.button);
-            if (key && *key) {
-                auto& slots = bindingKeys()[row.command];
-                if (slots[1].empty()) slots[1] = key;
-            }
-        }
-    };
-    seedPad(wowee::ui::padBindings());
-    seedPad(wowee::ui::padExtraBindings());
-    // The scheme-only bumper selects editable bottom-left action-bar chords.
-    for (const auto& row : wowee::ui::padBindings()) {
-        if (std::string(row.command).starts_with("ACTIONBUTTON")) {
-            const std::string slot = std::string(row.command).substr(12);
-            auto& keys = bindingKeys()["MULTIACTIONBAR1BUTTON" + slot];
-            if (keys[1].empty()) keys[1] = "SHIFT-" + std::string(wowee::ui::padKeyName(row.button));
-        }
-    }
-    if (withSaved) {
-        manager.loadBindingsWithLegacy(bindingsFilePath(), wowee::ui::SettingsPanel::getSettingsPath());
-    }
+    wowee::ui::KeybindingManager::getInstance().loadBindingsWithLegacy(
+        bindingsFilePath(), wowee::ui::SettingsPanel::getSettingsPath());
 }
 
 /// The command list the emitter built, or zero if bindings.xml never loaded.
@@ -1621,34 +1596,26 @@ std::string bindingAt(lua_State* L, int index) {
 
 }  // namespace
 
-bool clientActsOnBinding(const std::string& command) {
-    using Manager = wowee::ui::KeybindingManager;
-    for (int i = 0; i < Manager::getActionCount(); ++i)
-        if (command == Manager::commandForAction(static_cast<Manager::Action>(i))) return true;
-    static constexpr const char* native[] = {
-        "MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "TURNRIGHT", "STRAFELEFT", "STRAFERIGHT",
-        "JUMP", "SITORSTAND", "TOGGLERUN", "OPENCHATSLASH", "TARGETNEARESTENEMY",
-        "SCREENSHOT", "WOWEETOGGLERECORDING", "TOGGLESHEATH", "FRIENDNAMEPLATES", "CAMERAZOOMIN", "CAMERAZOOMOUT",
-        "WOWEERESETCAMERA",
-    };
-    for (const char* name : native) if (command == name) return true;
-    for (const auto& [prefix, count] : {std::pair{"ACTIONBUTTON", 12},
-             {"SHAPESHIFTBUTTON", 8}, {"MULTIACTIONBAR1BUTTON", 12}})
-        for (int i = 1; i <= count; ++i)
-            if (command == prefix + std::to_string(i)) return true;
-    return false;
-}
-
 // GetBindingKey(command) → key1, key2 (or nil)
-static int lua_GetBindingKey(lua_State* L) {
-    seedBindingDefaults();
-    const std::string command = luaL_checkstring(L, 1);
-    auto it = bindingKeys().find(command);
-    if (it == bindingKeys().end()) { lua_pushnil(L); lua_pushnil(L); return 2; }
+static int pushBindingKeys(lua_State* L, const std::string& command, bool controller) {
+    const auto& keys = wowee::ui::KeybindingManager::getInstance().bindings(controller
+        ? wowee::ui::KeybindingManager::Device::Controller : wowee::ui::KeybindingManager::Device::KeyboardMouse);
+    auto it = keys.find(command);
+    if (it == keys.end()) { lua_pushnil(L); lua_pushnil(L); return 2; }
     for (const std::string& key : it->second) {
         if (key.empty()) lua_pushnil(L); else lua_pushstring(L, key.c_str());
     }
     return 2;
+}
+
+static int lua_GetBindingKey(lua_State* L) {
+    seedBindingDefaults();
+    return pushBindingKeys(L, luaL_checkstring(L, 1), false);
+}
+
+static int lua_GetControllerBindingKey(lua_State* L) {
+    seedBindingDefaults();
+    return pushBindingKeys(L, luaL_checkstring(L, 1), true);
 }
 
 // GetBindingAction(key) → command, or "" for a key that holds nothing
@@ -1686,12 +1653,61 @@ static int lua_GetBinding(lua_State* L) {
     const std::string command = bindingAt(L, index);
     if (command.empty()) { lua_pushnil(L); return 1; }
     lua_pushstring(L, command.c_str());
-    auto it = bindingKeys().find(command);
-    if (it == bindingKeys().end()) { lua_pushnil(L); lua_pushnil(L); return 3; }
-    for (const std::string& key : it->second) {
-        if (key.empty()) lua_pushnil(L); else lua_pushstring(L, key.c_str());
-    }
+    pushBindingKeys(L, command, false);
     return 3;
+}
+
+static int lua_GetControllerBinding(lua_State* L) {
+    seedBindingDefaults();
+    const std::string command = bindingAt(L, static_cast<int>(luaL_checkinteger(L, 1)));
+    if (command.empty()) { lua_pushnil(L); return 1; }
+    lua_pushstring(L, command.c_str());
+    pushBindingKeys(L, command, true);
+    return 3;
+}
+
+// Editor-only slot edits retain holes; ordinary SetBinding keeps its addon API.
+static int lua_SetBindingSlot(lua_State* L) {
+    seedBindingDefaults();
+    const std::string command = luaL_checkstring(L, 1);
+    const int slot = static_cast<int>(luaL_checkinteger(L, 2)) - 1;
+    const char* key = lua_isnoneornil(L, 3) ? "" : luaL_checkstring(L, 3);
+    const bool controller = lua_toboolean(L, 4);
+    auto& manager = wowee::ui::KeybindingManager::getInstance();
+    auto& keys = manager.bindings(controller ? wowee::ui::KeybindingManager::Device::Controller
+                                           : wowee::ui::KeybindingManager::Device::KeyboardMouse);
+    if (slot < 0 || slot > 1 || command.empty() || command.starts_with("HEADER_") ||
+        std::any_of(command.begin(), command.end(), [](unsigned char c) { return c < 32 || c == 127; }) ||
+        (*key && (manager.isControllerKey(key) != controller))) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    // Validate and resolve conflicts before touching this command's old slots.
+    const auto existing = keys.find(command);
+    const auto old = existing == keys.end() ? std::array<std::string, 2>{} : existing->second;
+    if (*key && !manager.setBinding(key, command)) { lua_pushboolean(L, 0); return 1; }
+    const std::string assigned = *key ? manager.resolveBindingKey(key) : "";
+    auto desired = old;
+    if (desired[1 - slot] == assigned) desired[1 - slot].clear();
+    desired[slot] = assigned;
+    keys[command] = std::move(desired);
+    if (auto* gh = getGameHandler(L)) gh->fireAddonEvent("UPDATE_BINDINGS", {});
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int lua_ResetKeyboardBindings(lua_State* L) {
+    seedBindingDefaults();
+    wowee::ui::KeybindingManager::getInstance().resetToDefaults(false);
+    if (auto* gh = getGameHandler(L)) gh->fireAddonEvent("UPDATE_BINDINGS", {});
+    return 0;
+}
+
+static int lua_ResetControllerBindings(lua_State* L) {
+    seedBindingDefaults();
+    wowee::ui::KeybindingManager::getInstance().resetToDefaults(true);
+    if (auto* gh = getGameHandler(L)) gh->fireAddonEvent("UPDATE_BINDINGS", {});
+    return 0;
 }
 
 // SetBinding(key, command) → true. A nil command clears whatever holds the key,
@@ -1724,10 +1740,16 @@ static int lua_SaveBindings(lua_State* L) {
 // a previous run saved over them. The key binding panel's Default button
 // passes 0 and its Cancel passes the current set.
 static int lua_LoadBindings(lua_State* L) {
+    seedBindingDefaults();
+    auto& manager = wowee::ui::KeybindingManager::getInstance();
+    const auto previous = manager;
     const bool defaultsOnly = luaL_optinteger(L, 1, 1) == 0;
-    seedBindingDefaults(!defaultsOnly, true);
-    if (auto* gh = getGameHandler(L)) gh->fireAddonEvent("UPDATE_BINDINGS", {});
-    return 0;
+    const bool loaded = defaultsOnly || manager.loadBindingsWithLegacy(bindingsFilePath(), wowee::ui::SettingsPanel::getSettingsPath());
+    if (defaultsOnly) manager.resetToDefaults();
+    if (!loaded) manager = previous;
+    if (loaded) if (auto* gh = getGameHandler(L)) gh->fireAddonEvent("UPDATE_BINDINGS", {});
+    lua_pushboolean(L, loaded);
+    return 1;
 }
 
 // RunBinding(command, keystate) → runs what bindings.xml says the command does
@@ -1994,6 +2016,11 @@ void registerActionLuaAPI(lua_State* L) {
                 {"CloseTrade",          lua_CloseTrade},
                 {"BeginTrade",          lua_BeginTrade},
                 {"GetBindingKey",       lua_GetBindingKey},
+                {"WoweeGetControllerBindingKey", lua_GetControllerBindingKey},
+                {"WoweeGetControllerBinding", lua_GetControllerBinding},
+                {"WoweeSetBindingSlot", lua_SetBindingSlot},
+                {"WoweeResetKeyboardBindings", lua_ResetKeyboardBindings},
+                {"WoweeResetControllerBindings", lua_ResetControllerBindings},
                 {"GetBindingAction",    lua_GetBindingAction},
                 {"GetNumBindings",      lua_GetNumBindings},
                 {"GetBinding",          lua_GetBinding},

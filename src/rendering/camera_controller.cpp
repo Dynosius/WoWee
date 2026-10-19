@@ -3070,16 +3070,13 @@ void CameraController::update(float deltaTime) {
                                   std::sin(moveYawRad) * std::cos(flightPitchRad),
                                   std::sin(flightPitchRad));
 
-    // Toggle sit/crouch with X key (edge-triggered) - only when UI doesn't want keyboard
-    // Blocked while mounted
+    // Retain short taps/wheel pulses for sitting; diving still needs held input.
     bool prevSitting = sitting;
     bool xDown = bindings.isCommandDown("SITORSTAND");
-    // While swimming, X dives down instead of toggling sit
-    if (xDown && !xKeyWasDown && !mounted_ && !swimming) {
+    if (bindings.isCommandPressed("SITORSTAND") && !mounted_ && !swimming) {
         sitting = !sitting;
     }
     if (mounted_) sitting = false;
-    xKeyWasDown = xDown;
 
     // Stand up on any movement input or jump while sitting (WoW behaviour)
     //
@@ -3364,7 +3361,7 @@ void CameraController::processMouseMotion(const SDL_MouseMotionEvent& event) {
 }
 
 void CameraController::processMouseButton(const SDL_MouseButtonEvent& event) {
-    if (!enabled) {
+    if (!enabled && event.down) {
         return;
     }
 
