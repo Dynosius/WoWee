@@ -76,7 +76,7 @@ int main() {
     assert(manager.bindings().at(command)[1] == "ALT-F9");
     press(SDL_SCANCODE_PRINTSCREEN, SDL_KMOD_SHIFT);
     assert(!manager.isCommandPressed(command));
-    assert(!manager.isCommandPressed("SCREENSHOT"));
+    assert(manager.isCommandPressed("SCREENSHOT")); // Unbound chord falls back to PrintScreen.
     press(SDL_SCANCODE_F8, SDL_KMOD_CTRL);
     assert(manager.isCommandPressed(command));
     press(SDL_SCANCODE_F9, SDL_KMOD_ALT);
