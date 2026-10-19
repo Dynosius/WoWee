@@ -532,7 +532,7 @@ bool Application::initialize() {
             [this]() -> bool {
                 if (!addonManager_ || !addonsLoaded_) return false;
                 auto* engine = addonManager_->getLuaEngine();
-                return engine != nullptr && (engine->editBoxHasFocus() || engine->keyboardFrameHasFocus());
+                return engine != nullptr && engine->editBoxHasFocus();
             });
         addons::LuaServices luaSvc;
         luaSvc.window            = window.get();
@@ -1879,6 +1879,21 @@ void Application::run() {
 
         // Update input
         Input::getInstance().update();
+        // A keyboard frame is not text focus: propagated shortcuts and controller
+        // commands must still work. Block only physically held native keys when
+        // the top frame does not propagate, including frames without key repeats.
+        if (addonManager_ && addonsLoaded_) {
+            if (auto* engine = addonManager_->getLuaEngine(); engine && engine->keyboardFrameBlocksInput()) {
+                int count = 0;
+                const bool* keys = SDL_GetKeyboardState(&count);
+                for (int scan = 1; scan < count; ++scan) {
+                    if (!keys[scan]) continue;
+                    const auto key = ui::KeybindingManager::keyFromName(ui::KeybindingManager::keyNameFromSDL(
+                        SDL_GetKeyFromScancode(static_cast<SDL_Scancode>(scan), SDL_KMOD_NONE, true)));
+                    if (key != ImGuiKey_None) ui::noteInterfaceConsumedKey(key);
+                }
+            }
+        }
         if (ui::frameXmlOwnsMouse())
             for (int key = ImGuiKey_MouseLeft; key <= ImGuiKey_MouseX2; ++key)
                 ui::noteInterfaceConsumedKey(static_cast<ImGuiKey>(key));

@@ -9936,8 +9936,8 @@ LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey, bool down
 const ui::Widget* LuaEngine::topKeyboardFrame() const {
     const ui::Widget* best = nullptr;
     // Only the frames that enabled the keyboard, in ascending id order like the
-    // full scan this replaced. Called from every binding poll via the typed-
-    // input probe - dozens of times a frame - so it must not walk the whole tree.
+    // full scan this replaced. Key dispatch and held-key capture ask this on
+    // the input path, so it must not walk the whole tree.
     for (uint32_t id : widgets_.keyboardFrames()) {
         const ui::Widget* w = widgets_.get(id);
         if (!w || !w->keyboardEnabled || !w->visible) continue;
@@ -9948,6 +9948,11 @@ const ui::Widget* LuaEngine::topKeyboardFrame() const {
         }
     }
     return best;
+}
+
+bool LuaEngine::keyboardFrameBlocksInput() const {
+    const ui::Widget* frame = topKeyboardFrame();
+    return frame && !frame->propagateKeys;
 }
 
 void LuaEngine::dispatchFrameChar(const char* utf8) {
