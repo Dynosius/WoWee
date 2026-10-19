@@ -1685,7 +1685,7 @@ void Application::run() {
             }
             if (event.type == SDL_EVENT_KEY_UP && addonManager_ && addonsLoaded_) {
                 if (auto* engine = addonManager_->getLuaEngine()) {
-                    engine->dispatchBindingKey(SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true), false, false, false, false);
+                    engine->dispatchBindingKey(SDL_SCANCODE_TO_KEYCODE(event.key.scancode), false, false, false, false);
                 }
             }
             if (event.type == SDL_EVENT_KEY_DOWN) {
@@ -1696,7 +1696,7 @@ void Application::run() {
                     if (auto* engine = addonManager_->getLuaEngine();
                         engine && engine->editBoxHasFocus()) {
                         ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
-                            ui::KeybindingManager::keyNameFromSDL(event.key.key)));
+                            ui::KeybindingManager::keyNameFromSDL(SDL_SCANCODE_TO_KEYCODE(event.key.scancode))));
                         // Command counts as control here, because this is the
                         // copy-and-paste modifier and on a Mac that is the one
                         // every other program uses. Windows and Linux send
@@ -1742,9 +1742,10 @@ void Application::run() {
                     // actually takes it, so with nothing up the movement
                     // keys and every binding carry on exactly as before.
                     if (auto* engine = addonManager_->getLuaEngine()) {
-                        if (engine->dispatchFrameKey(SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true), true)) {
+                        if (engine->dispatchFrameKey(SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true), true,
+                                                     SDL_SCANCODE_TO_KEYCODE(event.key.scancode))) {
                             ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
-                                ui::KeybindingManager::keyNameFromSDL(event.key.key)));
+                                ui::KeybindingManager::keyNameFromSDL(SDL_SCANCODE_TO_KEYCODE(event.key.scancode))));
                             // Escape says so, because "Escape does nothing"
                             // is a live report and this is one of the three
                             // ways the press can end before the chain that
@@ -1771,9 +1772,9 @@ void Application::run() {
                     // the interface's own key-binding panel and then never
                     // honoured by any press.
                     if (auto* engine = addonManager_->getLuaEngine()) {
-                        const SDL_Keymod mods = SDL_GetModState();
+                        const SDL_Keymod mods = event.key.mod;
                         if (engine->dispatchBindingKey(
-                                SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true),
+                                SDL_SCANCODE_TO_KEYCODE(event.key.scancode),
                                 (mods & SDL_KMOD_SHIFT) != 0,
                                 (mods & SDL_KMOD_CTRL) != 0,
                                 (mods & SDL_KMOD_ALT) != 0, true)) {
@@ -1889,7 +1890,7 @@ void Application::run() {
                 for (int scan = 1; scan < count; ++scan) {
                     if (!keys[scan]) continue;
                     const auto key = ui::KeybindingManager::keyFromName(ui::KeybindingManager::keyNameFromSDL(
-                        SDL_GetKeyFromScancode(static_cast<SDL_Scancode>(scan), SDL_KMOD_NONE, true)));
+                        SDL_SCANCODE_TO_KEYCODE(scan)));
                     if (key != ImGuiKey_None) ui::noteInterfaceConsumedKey(key);
                 }
             }

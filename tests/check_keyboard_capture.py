@@ -9,10 +9,10 @@ Lua callback/ownership shell and held-key snapshot are doubles; no game assets
 or window are needed. This does not execute FrameXML's dismissal Lua itself.
 """
 import os
-from pathlib import Path
 import shlex
 import subprocess
 import tempfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,14 +56,16 @@ public:
     void* L_ = this;
     bool typing = false;
     int calls = 0;
+    std::string lastKey;
     int propagateAfterScript = -1;
     bool editBoxHasFocus() const { return typing; }
     bool keyboardFrameHasFocus() const { return topKeyboardFrame() != nullptr; }
     bool keyboardFrameBlocksInput() const;
     const ui::Widget* topKeyboardFrame() const;
-    bool dispatchFrameKey(int sdlKeycode, bool down);
-    void callFrameScript(uint32_t id, const char*, const char*) {
+    bool dispatchFrameKey(int sdlKeycode, bool down, int bindingKeycode = 0);
+    void callFrameScript(uint32_t id, const char*, const char* key) {
         ++calls;
+        lastKey = key;
         if (propagateAfterScript != -1)
             widgets_.get(id)->propagateKeys = propagateAfterScript != 0;
     }
@@ -100,6 +102,7 @@ int main(int argc, char** argv) {
     manager.bindings()["TOGGLEGAMEMENU"] = {"ESCAPE", ""};
     const std::string scenario = argv[1];
     const auto id = engine.widgets_.create(ui::WidgetKind::Frame, engine.widgets_.root(),
+        scenario == "layout_capture" ? "KeyBindingFrame" :
         scenario == "pad_map" ? "WorldMapFrame" : "StaticPopup1");
     auto* frame = engine.widgets_.get(id);
     engine.widgets_.setKeyboardEnabled(id, true);
@@ -123,7 +126,10 @@ int main(int argc, char** argv) {
                 ui::KeybindingManager::keyNameFromSDL(code)));
     };
     begin();
-    if (scenario == "pad_map" || scenario == "pad_popup" || scenario == "typing" || scenario == "imgui_typing") {
+    if (scenario == "layout_capture" || scenario == "layout_dialog") {
+        check(engine.dispatchFrameKey(SDLK_Z, true, SDL_SCANCODE_TO_KEYCODE(SDL_SCANCODE_W)), "frame did not consume layout key");
+        check(engine.lastKey == (scenario == "layout_capture" ? "W" : "Z"), "physical capture/layout dialog mismatch");
+    } else if (scenario == "pad_map" || scenario == "pad_popup" || scenario == "typing" || scenario == "imgui_typing") {
         // B's default native command must survive a non-editable keyboard frame.
         manager.setVirtualCommand("TOGGLEGAMEMENU", "pad:PAD2", true);
         app.capture();
@@ -174,7 +180,8 @@ int main(int argc, char** argv) {
         subprocess.run(command, check=True, cwd=tmp)
         failed = []
         for scenario in ("propagate", "consume", "script_propagate", "script_consume", "hidden", "disabled",
-                         "pad_map", "pad_popup", "typing", "imgui_typing", "held", "already_held"):
+                         "pad_map", "pad_popup", "typing", "imgui_typing", "held", "already_held",
+                         "layout_capture", "layout_dialog"):
             result = subprocess.run([str(binary), scenario], cwd=tmp, capture_output=True, text=True)
             print(f"{scenario}: {'PASS' if result.returncode == 0 else 'FAIL'}", flush=True)
             if result.returncode:

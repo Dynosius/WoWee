@@ -9974,13 +9974,13 @@ void LuaEngine::dispatchFrameChar(const char* utf8) {
     }
 }
 
-bool LuaEngine::dispatchFrameKey(int sdlKeycode, bool down) {
+bool LuaEngine::dispatchFrameKey(int sdlKeycode, bool down, int bindingKeycode) {
     if (!L_) return false;
-    const std::string key = wowKeyName(sdlKeycode);
-    if (key.empty()) return false;
-
     const ui::Widget* best = topKeyboardFrame();
     if (!best) return false;
+    const std::string key = wowKeyName(best->name == "KeyBindingFrame" && bindingKeycode
+                                     ? bindingKeycode : sdlKeycode);
+    if (key.empty()) return false;
 
     callFrameScript(best->id, down ? "OnKeyDown" : "OnKeyUp", key.c_str());
     // Consumed unless the frame asked for the key to carry on, which is WoW's

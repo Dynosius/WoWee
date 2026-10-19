@@ -152,7 +152,8 @@ std::string KeybindingManager::mouseButtonNameFromSDL(uint8_t button) {
 }
 std::string KeybindingManager::keyNameFromSDL(uint32_t key) {
     switch (key) {
-        case SDLK_RETURN: return "ENTER";
+        case SDLK_RETURN:
+        case SDL_SCANCODE_TO_KEYCODE(SDL_SCANCODE_RETURN): return "ENTER";
         case SDLK_KP_0: return "NUMPAD0";
         case SDLK_KP_1: return "NUMPAD1";
         case SDLK_KP_2: return "NUMPAD2";
@@ -315,7 +316,7 @@ void KeybindingManager::processInputEvent(const SDL_Event& event) {
     bool repeat = false;
     bool shift = false, ctrl = false, alt = false;
     if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
-        key = keyFromName(keyNameFromSDL(SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true)));
+        key = keyFromName(keyNameFromSDL(SDL_SCANCODE_TO_KEYCODE(event.key.scancode)));
         down = event.type == SDL_EVENT_KEY_DOWN;
         repeat = event.key.repeat;
         shift = (event.key.mod & SDL_KMOD_SHIFT) != 0;
@@ -348,8 +349,8 @@ void KeybindingManager::updateInput() {
     const bool* keys = SDL_GetKeyboardState(&count);
     for (int s = 1; s < count; ++s) {
         if (!keys[s]) continue;
-        // key_event=true respects the current layout but not held Shift/CapsLock.
-        const auto name = keyNameFromSDL(SDL_GetKeyFromScancode(static_cast<SDL_Scancode>(s), SDL_KMOD_NONE, true));
+        // SDL's scancode names preserve physical US positions on every layout.
+        const auto name = keyNameFromSDL(SDL_SCANCODE_TO_KEYCODE(s));
         const auto key = keyFromName(name);
         if (key != ImGuiKey_None) next[key - ImGuiKey_NamedKey_BEGIN] = true;
     }

@@ -2330,6 +2330,15 @@ target_link_libraries(check_input_edges PRIVATE imgui SDL3::SDL3)
 add_test(NAME input_edges COMMAND check_input_edges)
 register_test_target(check_input_edges)
 
+add_executable(check_physical_bindings
+    check_physical_bindings.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${TEST_COMMON_SOURCES})
+target_include_directories(check_physical_bindings PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(check_physical_bindings PRIVATE imgui SDL3::SDL3)
+add_test(NAME physical_bindings COMMAND check_physical_bindings)
+register_test_target(check_physical_bindings)
+
 add_executable(check_binding_migration
     check_binding_migration.cpp
     ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
