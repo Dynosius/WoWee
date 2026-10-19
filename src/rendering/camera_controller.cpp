@@ -2817,6 +2817,8 @@ void CameraController::update(float deltaTime) {
     bool keyE = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandDown("STRAFERIGHT");
     bool shiftDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT));
     bool ctrlDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LCTRL) || input.isKeyPressed(SDL_SCANCODE_RCTRL));
+    // Ctrl temporarily forces walking without changing the bindable toggle.
+    const bool walking = walking_ || ctrlDown;
     bool nowJump = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandPressed("JUMP");
     // Swimming and flying need the held state, not the press edge: on land
     // space is a one-shot jump, but in water and in the air it is continuous
@@ -2988,7 +2990,7 @@ void CameraController::update(float deltaTime) {
             speed = (runBackSpeedOverride_ > 0.0f && runBackSpeedOverride_ < 100.0f
                      && !std::isnan(runBackSpeedOverride_))
                         ? runBackSpeedOverride_ : WOW_BACK_SPEED;
-        } else if (walking_) {
+        } else if (walking) {
             speed = (walkSpeedOverride_ > 0.0f && walkSpeedOverride_ < 100.0f && !std::isnan(walkSpeedOverride_))
                         ? walkSpeedOverride_ : WOW_WALK_SPEED;
         } else if (runSpeedOverride_ > 0.0f && runSpeedOverride_ < 100.0f && !std::isnan(runSpeedOverride_)) {
@@ -3011,7 +3013,7 @@ void CameraController::update(float deltaTime) {
     if (useWoWSpeed) {
         // "Sprinting" flag drives run animation/stronger footstep set.
         // In WoW mode this means running pace (not walk/backpedal), not Shift.
-        runPace = hasMoveInput && !walking_ && !nowBackward;
+        runPace = hasMoveInput && !walking && !nowBackward;
     } else {
         runPace = hasMoveInput && shiftDown;
     }

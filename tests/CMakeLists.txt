@@ -2348,6 +2348,31 @@ target_link_libraries(check_binding_migration PRIVATE imgui SDL3::SDL3)
 add_test(NAME binding_migration COMMAND check_binding_migration)
 register_test_target(check_binding_migration)
 
+# Compile the real camera input/speed phase without terrain/renderer linkage.
+# The generated translation unit uses the real controller declaration, camera,
+# Input, KeybindingManager and ImGui, not duplicated walk/reset logic.
+if(Python3_Interpreter_FOUND)
+    set(CAMERA_INPUT_SEAM ${CMAKE_CURRENT_BINARY_DIR}/camera_input_seam.cpp)
+    add_custom_command(OUTPUT ${CAMERA_INPUT_SEAM}
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/camera_input_seam.py
+                ${CAMERA_INPUT_SEAM}
+        DEPENDS camera_input_seam.py ${CMAKE_SOURCE_DIR}/src/rendering/camera_controller.cpp
+        VERBATIM)
+    add_executable(check_camera_walk
+        check_camera_walk.cpp ${CAMERA_INPUT_SEAM}
+        ${CMAKE_SOURCE_DIR}/src/core/input.cpp
+        ${CMAKE_SOURCE_DIR}/src/rendering/camera.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+        ${TEST_COMMON_SOURCES})
+    target_compile_features(check_camera_walk PRIVATE cxx_std_20)
+    target_include_directories(check_camera_walk PRIVATE
+        ${TEST_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(check_camera_walk PRIVATE imgui SDL3::SDL3)
+    wowee_test_link_glm(check_camera_walk)
+    add_test(NAME camera_walk COMMAND check_camera_walk)
+    register_test_target(check_camera_walk)
+endif()
+
 # Framework-free binding seams compile extracted production bodies with CXX/g++.
 if(Python3_Interpreter_FOUND)
     add_test(NAME pad_routing
