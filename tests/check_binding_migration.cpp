@@ -71,5 +71,40 @@ int main() {
     assert(recovered.loadBindingsWithLegacy(file.string(), legacy.string()));
     assert(recovered.commandForKey("F12") == "TOGGLECHARACTER0");
     assert(recovered.commandForKey("F9").empty());
+    // Pre-unification saves have empty comma-separated second slots, not
+    // explicit unbinds of defaults which only became editable in this PR.
+    std::ofstream(file) << "MOVEFORWARD=W,\r\nTOGGLEGAMEMENU=ESCAPE,\r\n"
+        "TOGGLEAUTORUN=NUMLOCK,\r\nTURNLEFT=F8,\r\nJUMP=SPACE,F9\r\n"
+        "MOVEBACKWARD=,\r\n";
+    auto upgraded = Manager::getInstance();
+    upgraded.bindings()["TOGGLEGAMEMENU"][1] = "PAD2"; // Lua's seeded default.
+    assert(upgraded.loadBindings(file.string()));
+    assert(upgraded.bindings().at("MOVEFORWARD")[1] == "UP");
+    assert(upgraded.bindings().at("TOGGLEGAMEMENU")[1] == "PAD2");
+    assert(upgraded.bindings().at("TOGGLEAUTORUN")[0] == "NUMLOCK");
+    assert(upgraded.bindings().at("TOGGLEAUTORUN")[1] == "`");
+    assert(upgraded.bindings().at("TURNLEFT")[0] == "F8");
+    assert(upgraded.bindings().at("TURNLEFT")[1] == "LEFT");
+    assert(upgraded.bindings().at("JUMP")[1] == "F9");
+    assert(upgraded.bindings().at("MOVEBACKWARD")[0].empty());
+    assert(upgraded.bindings().at("MOVEBACKWARD")[1].empty());
+    assert(upgraded.saveBindings(file.string()));
+    const auto migrated = upgraded.bindings();
+    auto reload = Manager::getInstance();
+    assert(reload.loadBindings(file.string()));
+    assert(reload.bindings() == migrated);
+
+    // Explicit assignments win over recovered defaults, irrespective of order.
+    std::ofstream(file) << "MOVEFORWARD=W,\nJUMP=UP,\n";
+    auto conflict = Manager::getInstance();
+    assert(conflict.loadBindings(file.string()));
+    assert(conflict.commandForKey("UP") == "JUMP");
+    assert(conflict.bindings().at("MOVEFORWARD")[1].empty());
+    // The tab format can explicitly clear either or both slots.
+    std::ofstream(file) << "MOVEFORWARD=W\t\nTOGGLEAUTORUN=\t\n";
+    assert(reload.loadBindings(file.string()));
+    assert(reload.bindings().at("MOVEFORWARD")[1].empty());
+    assert(reload.bindings().at("TOGGLEAUTORUN")[0].empty());
+    assert(reload.bindings().at("TOGGLEAUTORUN")[1].empty());
     fs::remove_all(root);
 }

@@ -211,6 +211,22 @@ bool KeybindingManager::loadBindings(const std::string& path) {
     if (!in) { LOG_WARNING("Could not read bindings from ", path); return false; }
     const auto saved = wowee::addons::parseSavedBindings(in);
     if (in.bad()) { LOG_WARNING("Could not read bindings from ", path); return false; }
+
+    Bindings legacyDefaults;
+    in.clear();
+    in.seekg(0);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.ends_with(',') || line.find('\t') != std::string::npos) continue;
+        const auto command = line.substr(0, line.find('='));
+        const auto original = bindings_.find(command);
+        const auto row = saved.find(command);
+        if (original == bindings_.end() || row == saved.end() ||
+            row->second[0].empty() || !row->second[1].empty()) continue;
+        const auto& defaults = original->second;
+        legacyDefaults[command][1] = defaults[1] == row->second[0] ? defaults[0] : defaults[1];
+    }
     // Clear every saved command first: unbound slots must replace defaults too.
     for (const auto& [command, slots] : saved) bindings_[command] = {};
     for (const auto& [command, slots] : saved) {
@@ -222,6 +238,10 @@ bool KeybindingManager::loadBindings(const std::string& path) {
                 if (i == 1 && slots[0].empty()) std::swap(target[0], target[1]);
             }
         }
+    }
+    // Recover only unclaimed defaults after all saved keys have been applied.
+    for (const auto& [command, slots] : legacyDefaults) {
+        if (!slots[1].empty() && commandForKey(slots[1]).empty()) setBinding(slots[1], command);
     }
     in.clear();
     in.seekg(0);
