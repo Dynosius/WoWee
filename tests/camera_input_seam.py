@@ -20,6 +20,7 @@ def section(start, end):
 output = r'''
 #include "camera_input_seam.hpp"
 #include "core/coordinates.hpp"
+#include "core/logger.hpp"
 #include <cmath>
 
 namespace camera_input_test {
@@ -40,7 +41,16 @@ output += '''
 '''
 output += section("void CameraController::startIntroPan(", "float CameraController::raymarchTerrainCameraLimit(")
 output += section("void CameraController::resetAngles()", "void CameraController::reset()")
-output += section("void CameraController::applyLookDelta(", "void CameraController::setFollowTarget(")
+output += section("void CameraController::applyLookDelta(", "bool CameraController::isMoving()")
 output += section("bool CameraController::isSprinting()", "void CameraController::triggerMountJump()")
 output += "\n} // namespace wowee::rendering\n"
+
+# Also test the real Lua/native dispatch gate without linking the rest of the
+# action API (game handlers, action bars and addon services).
+action_api = (root / "src/addons/lua_action_api.cpp").read_text(encoding="utf-8")
+begin = action_api.index("bool clientActsOnBinding(")
+end = action_api.index("// GetBindingKey(command)", begin)
+output += '\n#include "addons/lua_api_registrations.hpp"\nnamespace wowee::addons {\n'
+output += action_api[begin:end]
+output += "\n} // namespace wowee::addons\n"
 Path(sys.argv[1]).write_text(output, encoding="utf-8")

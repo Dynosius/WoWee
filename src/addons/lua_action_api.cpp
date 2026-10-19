@@ -1629,6 +1629,7 @@ bool clientActsOnBinding(const std::string& command) {
         "MOVEFORWARD", "MOVEBACKWARD", "TURNLEFT", "TURNRIGHT", "STRAFELEFT", "STRAFERIGHT",
         "JUMP", "SITORSTAND", "TOGGLERUN", "OPENCHATSLASH", "TARGETNEARESTENEMY",
         "SCREENSHOT", "WOWEETOGGLERECORDING", "TOGGLESHEATH", "FRIENDNAMEPLATES", "CAMERAZOOMIN", "CAMERAZOOMOUT",
+        "WOWEERESETCAMERA",
     };
     for (const char* name : native) if (command == name) return true;
     for (const auto& [prefix, count] : {std::pair{"ACTIONBUTTON", 12},

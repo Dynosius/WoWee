@@ -2357,6 +2357,7 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/camera_input_seam.py
                 ${CAMERA_INPUT_SEAM}
         DEPENDS camera_input_seam.py ${CMAKE_SOURCE_DIR}/src/rendering/camera_controller.cpp
+                ${CMAKE_SOURCE_DIR}/src/addons/lua_action_api.cpp
         VERBATIM)
     add_executable(check_camera_walk
         check_camera_walk.cpp ${CAMERA_INPUT_SEAM}
@@ -2371,6 +2372,22 @@ if(Python3_Interpreter_FOUND)
     wowee_test_link_glm(check_camera_walk)
     add_test(NAME camera_walk COMMAND check_camera_walk)
     register_test_target(check_camera_walk)
+
+    add_executable(check_camera_reset
+        check_camera_reset.cpp ${CAMERA_INPUT_SEAM}
+        ${CMAKE_SOURCE_DIR}/src/core/input.cpp
+        ${CMAKE_SOURCE_DIR}/src/rendering/camera.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/framexml_emitter.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/xml_parser.cpp
+        ${TEST_COMMON_SOURCES})
+    target_compile_features(check_camera_reset PRIVATE cxx_std_20)
+    target_include_directories(check_camera_reset PRIVATE ${TEST_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/extern/lua-5.1.5/src)
+    target_link_libraries(check_camera_reset PRIVATE imgui SDL3::SDL3 lua51)
+    wowee_test_link_glm(check_camera_reset)
+    add_test(NAME camera_reset COMMAND check_camera_reset)
+    register_test_target(check_camera_reset)
 endif()
 
 # Framework-free binding seams compile extracted production bodies with CXX/g++.

@@ -66,6 +66,7 @@ void KeybindingManager::initializeDefaults() {
         {"SCREENSHOT", {"PRINTSCREEN", ""}}, {"FRIENDNAMEPLATES", {"SHIFT-V", ""}},
         {"WOWEETOGGLERECORDING", {"SHIFT-PRINTSCREEN", ""}},
         {"CAMERAZOOMIN", {"MOUSEWHEELUP", ""}}, {"CAMERAZOOMOUT", {"MOUSEWHEELDOWN", ""}},
+        {"WOWEERESETCAMERA", {"R", ""}},
     };
     bindings_.insert(defaults.begin(), defaults.end());
     for (int i = 1; i <= 12; ++i) {

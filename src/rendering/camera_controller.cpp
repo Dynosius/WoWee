@@ -2805,6 +2805,7 @@ void CameraController::update(float deltaTime) {
     if (bindings.isCommandPressed("TOGGLERUN")) walking_ = !walking_;
     if (bindings.isCommandPressed("CAMERAZOOMIN")) processMouseWheel(1.0f);
     if (bindings.isCommandPressed("CAMERAZOOMOUT")) processMouseWheel(-1.0f);
+    if (bindings.isCommandPressed("WOWEERESETCAMERA")) resetAngles();
 
     // Determine current key states
     // Arrow keys mirror WASD the way the original client maps them:
