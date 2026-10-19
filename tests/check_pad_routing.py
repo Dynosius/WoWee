@@ -238,10 +238,11 @@ int main() {
     assert(controls.pointerMode_ && active.empty());
     buttons.fill(false); frame(); controls.pointerMode_ = false;
 
-    // Real lookup falls back for keyboard modifiers, never for cleared pad chords.
+    // Real lookup falls back to bare bindings only when no exact chord exists.
     engine.bindings = {{"K", "KEYBOARD"}, {"PAD3", "JUMP"}};
     assert(engine.bindingCommandForKey("ALT-CTRL-SHIFT-K") == "KEYBOARD");
-    assert(engine.bindingCommandForKey("SHIFT-PAD3").empty());
+    assert(engine.bindingCommandForKey("SHIFT-PAD3") == "JUMP");
+    assert(engine.bindingCommandForKey("SHIFT-PADFORWARD").empty());
     engine.bindings["SHIFT-PAD3"] = "EXPLICIT";
     assert(engine.bindingCommandForKey("SHIFT-PAD3") == "EXPLICIT");
     assert(engine.bindingCommandForKey("").empty());
@@ -263,7 +264,7 @@ int main() {
     assert(active.empty());
 
     // Actual dispatchBindingInput must latch the original script AND chord key.
-    engine.bindings = {{"SHIFT-PAD3", "SCRIPT"}};
+    engine.bindings = {{"PAD3", "JUMP"}, {"SHIFT-PAD3", "SCRIPT"}};
     engine.runOnUp.insert("SCRIPT");
     engine.scriptEdges.clear();
     buttons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER] = buttons[x] = true; frame(); frame();

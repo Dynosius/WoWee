@@ -9829,8 +9829,9 @@ std::string LuaEngine::bindingCommandForKey(const std::string& key) {
         std::string base = key;
         for (const char* prefix : {"ALT-", "CTRL-", "SHIFT-"})
             if (base.starts_with(prefix)) base.erase(0, std::char_traits<char>::length(prefix));
-        // Pad chords are explicit assignments: clearing one must leave it inert.
-        if (base != key && !base.starts_with("PAD")) return bindingCommandForKey(base);
+        // Exact chords win; an unassigned modifier chord keeps the bare binding,
+        // including pad buttons while the scheme's left bumper is held.
+        if (base != key) return bindingCommandForKey(base);
     }
     return command;
 }

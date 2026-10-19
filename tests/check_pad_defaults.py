@@ -56,17 +56,39 @@ void seedDefaults() {
         assert(active.size() == 1 && active.count(cmd));
         buttons[b] = false; frame(); assert(active.empty());
     };
-    press(SDL_GAMEPAD_BUTTON_EAST, "TOGGLEGAMEMENU");
+    const std::pair<SDL_GamepadButton, std::string> bareCommands[] = {
+        {SDL_GAMEPAD_BUTTON_SOUTH, "JUMP"},
+        {SDL_GAMEPAD_BUTTON_EAST, "TOGGLEGAMEMENU"},
+        {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, "TARGETNEARESTENEMY"},
+        {SDL_GAMEPAD_BUTTON_LEFT_STICK, "TOGGLEAUTORUN"},
+        {SDL_GAMEPAD_BUTTON_RIGHT_STICK, "SITORSTAND"},
+    };
+    for (const auto& [b, cmd] : bareCommands) press(b, cmd);
     assert(engine.bindings.find("PADFORWARD") == engine.bindings.end());
     buttons[SDL_GAMEPAD_BUTTON_START] = true; frame(); assert(active.empty());
     buttons[SDL_GAMEPAD_BUTTON_START] = false; frame();
-    press(SDL_GAMEPAD_BUTTON_RIGHT_STICK, "SITORSTAND");
-    // Same-frame bumper+face resolves the modifier before routing the face.
+    // Same-frame LB+button must keep the bare command unless that exact chord
+    // is assigned. Start has neither a bare default nor a chord default.
     buttons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER] = true;
-    press(SDL_GAMEPAD_BUTTON_WEST, "MULTIACTIONBAR1BUTTON1");
+    for (const auto& [b, cmd] : bareCommands) press(b, cmd);
+    buttons[SDL_GAMEPAD_BUTTON_START] = true; frame(); assert(active.empty());
+    buttons[SDL_GAMEPAD_BUTTON_START] = false; frame();
+    engine.bindings["SHIFT-PADFORWARD"] = "SITORSTAND";
+    press(SDL_GAMEPAD_BUTTON_START, "SITORSTAND");
+    engine.bindings.erase("SHIFT-PADFORWARD");
+    buttons[SDL_GAMEPAD_BUTTON_START] = true; frame(); assert(active.empty());
+    buttons[SDL_GAMEPAD_BUTTON_START] = false; frame();
+    action = 1;
+    for (const auto b : {SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH,
+                        SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_RIGHT,
+                        SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT})
+        press(b, "MULTIACTIONBAR1BUTTON" + std::to_string(action++));
+    engine.bindings["SHIFT-PAD1"] = "SITORSTAND";
+    press(SDL_GAMEPAD_BUTTON_SOUTH, "SITORSTAND");
+    engine.bindings.erase("SHIFT-PAD1");
+    press(SDL_GAMEPAD_BUTTON_SOUTH, "JUMP");
     engine.bindings.erase("SHIFT-PAD3");
-    buttons[SDL_GAMEPAD_BUTTON_WEST] = true; frame(); assert(active.empty());
-    buttons[SDL_GAMEPAD_BUTTON_WEST] = false; frame();
+    press(SDL_GAMEPAD_BUTTON_WEST, "ACTIONBUTTON1");
     engine.bindings["SHIFT-PAD3"] = "JUMP";
     press(SDL_GAMEPAD_BUTTON_WEST, "JUMP");
     // Releasing the bumper first must still release the original chord key.
@@ -88,6 +110,10 @@ void seedDefaults() {
     }
     engine.bindings["PADFORWARD"] = "TOGGLEGAMEMENU";
     press(SDL_GAMEPAD_BUTTON_START, "TOGGLEGAMEMENU");
+    engine.bindings.erase("PADLSHOULDER");
+    buttons[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER] = true;
+    press(SDL_GAMEPAD_BUTTON_START, "TOGGLEGAMEMENU");
+    buttons.fill(false); frame();
 '''
     # Run only these checks; the original test exercises its own JUMP-only double.
     start = harness.index('    const auto back =')
@@ -97,4 +123,4 @@ void seedDefaults() {
 
 if __name__ == '__main__':
     main(defaults)
-    print('PASS: default Escape+B, unassigned/rebound Start, sit/dive, bumper chords, clear/rebind')
+    print('PASS: defaults, LB bare fallback, exact chords, unassigned/rebound Start, clear/rebind')
