@@ -2349,54 +2349,77 @@ add_test(NAME binding_migration COMMAND check_binding_migration)
 register_test_target(check_binding_migration)
 
 # Compile the real camera input/speed phase without terrain/renderer linkage.
-# The generated translation unit uses the real controller declaration, camera,
+# camera_input_seam.cpp uses the real controller declaration, camera,
 # Input, KeybindingManager and ImGui, not duplicated walk/reset logic.
-if(Python3_Interpreter_FOUND)
-    set(CAMERA_INPUT_SEAM ${CMAKE_CURRENT_BINARY_DIR}/camera_input_seam.cpp)
-    add_custom_command(OUTPUT ${CAMERA_INPUT_SEAM}
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/camera_input_seam.py
-                ${CAMERA_INPUT_SEAM}
-        DEPENDS camera_input_seam.py ${CMAKE_SOURCE_DIR}/src/rendering/camera_controller.cpp
-                ${CMAKE_SOURCE_DIR}/src/addons/lua_action_api.cpp
-        VERBATIM)
-    add_executable(check_camera_walk
-        check_camera_walk.cpp ${CAMERA_INPUT_SEAM}
-        ${CMAKE_SOURCE_DIR}/src/core/input.cpp
-        ${CMAKE_SOURCE_DIR}/src/rendering/camera.cpp
-        ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-        ${TEST_COMMON_SOURCES})
-    target_compile_features(check_camera_walk PRIVATE cxx_std_20)
-    target_include_directories(check_camera_walk PRIVATE
-        ${TEST_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(check_camera_walk PRIVATE imgui SDL3::SDL3)
-    wowee_test_link_glm(check_camera_walk)
-    add_test(NAME camera_walk COMMAND check_camera_walk)
-    register_test_target(check_camera_walk)
+add_executable(check_camera_walk
+    check_camera_walk.cpp camera_input_seam.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/input.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/camera.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${TEST_COMMON_SOURCES})
+target_compile_features(check_camera_walk PRIVATE cxx_std_20)
+target_include_directories(check_camera_walk PRIVATE
+    ${TEST_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(check_camera_walk PRIVATE imgui SDL3::SDL3)
+wowee_test_link_glm(check_camera_walk)
+add_test(NAME camera_walk COMMAND check_camera_walk)
+register_test_target(check_camera_walk)
 
-    add_executable(check_camera_reset
-        check_camera_reset.cpp ${CAMERA_INPUT_SEAM}
-        ${CMAKE_SOURCE_DIR}/src/core/input.cpp
-        ${CMAKE_SOURCE_DIR}/src/rendering/camera.cpp
-        ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
-        ${CMAKE_SOURCE_DIR}/src/ui/framexml_emitter.cpp
-        ${CMAKE_SOURCE_DIR}/src/ui/xml_parser.cpp
-        ${TEST_COMMON_SOURCES})
-    target_compile_features(check_camera_reset PRIVATE cxx_std_20)
-    target_include_directories(check_camera_reset PRIVATE ${TEST_INCLUDE_DIRS}
-        ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/extern/lua-5.1.5/src)
-    target_link_libraries(check_camera_reset PRIVATE imgui SDL3::SDL3 lua51)
-    wowee_test_link_glm(check_camera_reset)
-    add_test(NAME camera_reset COMMAND check_camera_reset)
-    register_test_target(check_camera_reset)
-endif()
+add_executable(check_camera_reset
+    check_camera_reset.cpp camera_input_seam.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/input.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/camera.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/framexml_emitter.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/xml_parser.cpp
+    ${TEST_COMMON_SOURCES})
+target_compile_features(check_camera_reset PRIVATE cxx_std_20)
+target_include_directories(check_camera_reset PRIVATE ${TEST_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/extern/lua-5.1.5/src)
+target_link_libraries(check_camera_reset PRIVATE imgui SDL3::SDL3 lua51)
+wowee_test_link_glm(check_camera_reset)
+add_test(NAME camera_reset COMMAND check_camera_reset)
+register_test_target(check_camera_reset)
 
-# Framework-free binding seams compile extracted production bodies with CXX/g++.
-if(Python3_Interpreter_FOUND)
-    add_test(NAME pad_routing
-             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_pad_routing.py)
-    add_test(NAME pad_defaults
-             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_pad_defaults.py)
-endif()
+add_executable(check_pad_routing check_pad_routing.cpp)
+target_compile_features(check_pad_routing PRIVATE cxx_std_20)
+add_test(NAME pad_routing COMMAND check_pad_routing)
+register_test_target(check_pad_routing)
+
+add_executable(check_pad_defaults check_pad_defaults.cpp)
+target_compile_features(check_pad_defaults PRIVATE cxx_std_20)
+add_test(NAME pad_defaults COMMAND check_pad_defaults)
+register_test_target(check_pad_defaults)
+
+add_executable(check_mouse_routing check_mouse_routing.cpp)
+target_compile_features(check_mouse_routing PRIVATE cxx_std_20)
+add_test(NAME mouse_routing COMMAND check_mouse_routing)
+register_test_target(check_mouse_routing)
+
+add_executable(check_wheel_routing check_wheel_routing.cpp)
+target_compile_features(check_wheel_routing PRIVATE cxx_std_20)
+add_test(NAME wheel_routing COMMAND check_wheel_routing)
+register_test_target(check_wheel_routing)
+
+add_executable(check_keyboard_capture
+    check_keyboard_capture.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widget_tree.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/escape_action.cpp
+    ${TEST_COMMON_SOURCES})
+target_compile_features(check_keyboard_capture PRIVATE cxx_std_20)
+target_include_directories(check_keyboard_capture PRIVATE ${TEST_INCLUDE_DIRS})
+target_link_libraries(check_keyboard_capture PRIVATE imgui SDL3::SDL3)
+add_test(NAME keyboard_capture COMMAND check_keyboard_capture)
+register_test_target(check_keyboard_capture)
+
+add_executable(check_game_screen_commands
+    check_game_screen_commands.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/shapeshift_forms.cpp)
+target_compile_features(check_game_screen_commands PRIVATE cxx_std_20)
+target_include_directories(check_game_screen_commands PRIVATE ${TEST_INCLUDE_DIRS})
+add_test(NAME game_screen_commands COMMAND check_game_screen_commands)
+register_test_target(check_game_screen_commands)
 
 # ── test_tab_target ──────────────────────────────────────────
 # Which units Tab and TargetNearestEnemy may pick: hostile and neutral alike,

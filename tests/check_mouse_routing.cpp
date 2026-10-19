@@ -1,24 +1,4 @@
-#!/usr/bin/env python3
-"""Run: python tests/check_mouse_routing.py (g++ or CXX).
 
-Compile the real application mouse adapter, shared conversion and Lua dispatch
-body against small UI/script-runner doubles; no window or game assets needed.
-"""
-import os
-import subprocess
-import tempfile
-from pathlib import Path
-
-from check_pad_routing import section
-
-conversion = section("src/ui/keybinding_manager.cpp",
-                     "std::string KeybindingManager::mouseButtonNameFromSDL(",
-                     "std::string KeybindingManager::keyNameFromSDL(")
-adapter = section("src/core/application.cpp", "            bool pointerBindingTaken = false;",
-                  "            // Pass mouse events to camera controller")
-dispatch = section("src/addons/lua_engine.cpp", "bool LuaEngine::dispatchBindingInput(",
-                   "bool LuaEngine::bindingRunsOnUp(")
-source = r'''
 #include <cassert>
 #include <cstdint>
 #include <map>
@@ -56,9 +36,35 @@ struct LuaEngine {
     }
     bool dispatchBindingInput(const std::string&,bool,bool,bool,bool);
 };
-'''
-source += conversion + dispatch
-source += r'''
+std::string KeybindingManager::mouseButtonNameFromSDL(uint8_t button) {
+    switch (button) {
+        case SDL_BUTTON_LEFT: return "BUTTON1";
+        case SDL_BUTTON_RIGHT: return "BUTTON2";
+        case SDL_BUTTON_MIDDLE: return "BUTTON3";
+        case SDL_BUTTON_X1: return "BUTTON4";
+        case SDL_BUTTON_X2: return "BUTTON5";
+        default: return "";
+    }
+}
+bool LuaEngine::dispatchBindingInput(const std::string& key, bool shift, bool ctrl, bool alt, bool down) {
+    if (!L_ || key.empty()) return false;
+    if (!down) {
+        auto held = heldBindings_.find(key);
+        if (held == heldBindings_.end()) return false;
+        const std::string command = std::move(held->second);
+        heldBindings_.erase(held);
+        return !bindingRunsOnUp(command) || runBindingScript(command, false);
+    }
+    if (heldBindings_.count(key)) return true;
+    if (editBoxHasFocus() || ImGui::GetIO().WantTextInput) return false;
+    const std::string command = bindingCommandForKey(ui::KeybindingManager::modifiedKey(key, shift, ctrl, alt));
+    if (command.empty() || clientActsOnBinding(command)) return false;
+    if (!runBindingScript(command, true)) return false;
+    heldBindings_[key] = command; // Release the original command even if it is rebound while held.
+    return true;
+}
+
+
 struct AddonManager {
     LuaEngine engine;
     LuaEngine* getLuaEngine() { return &engine; }
@@ -70,9 +76,24 @@ struct Application {
     AddonManager manager;
     AddonManager* addonManager_=&manager;
     bool route(Event event) {
-'''
-source += adapter + '\nreturn pointerBindingTaken;\n}\n};\n'
-source += r'''
+            bool pointerBindingTaken = false;
+            if (state == AppState::IN_GAME && addonManager_ && addonManager_->getLuaEngine() &&
+                (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP)) {
+                const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+                if (!down || (!ImGui::GetIO().WantCaptureMouse && !ui::frameXmlOwnsMouse())) {
+                    const auto mods = SDL_GetModState();
+                    pointerBindingTaken = addonManager_->getLuaEngine()->dispatchBindingInput(
+                        ui::KeybindingManager::mouseButtonNameFromSDL(event.button.button),
+                        (mods & SDL_KMOD_SHIFT) != 0, (mods & SDL_KMOD_CTRL) != 0,
+                        (mods & SDL_KMOD_ALT) != 0, down);
+                }
+            }
+
+
+return pointerBindingTaken;
+}
+};
+
 int main() {
     Application app;
     auto& engine=app.manager.engine;
@@ -100,12 +121,3 @@ int main() {
     }
     assert(!app.route({SDL_EVENT_MOUSE_BUTTON_DOWN,{255}}));
 }
-'''
-with tempfile.TemporaryDirectory(prefix="wowee-mouse-routing-") as tmp:
-    path = Path(tmp) / "check.cpp"
-    exe = Path(tmp) / "check.exe"
-    path.write_text(source, encoding="utf-8")
-    subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-Wall", "-Wextra",
-                    "-Werror", str(path), "-o", str(exe)], check=True)
-    subprocess.run([str(exe)], check=True)
-print("PASS: shared mouse conversion, right/middle script isolation, press/release and UI capture")

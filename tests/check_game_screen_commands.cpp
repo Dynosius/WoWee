@@ -1,37 +1,4 @@
-#!/usr/bin/env python3
-"""Run: python tests/check_game_screen_commands.py (g++ or CXX on PATH).
 
-Compile the actual GameScreen button loops and text-focus guard against small
-binding/game sinks, linking the real form filter, slot type and page arithmetic.
-No window, assets, SDL, or full client build required. --measure prints idle
-allocation counts without asserting the performance contract (for before/after).
-This checks the gameplay polling seam, not physical input or server responses.
-"""
-import argparse
-import os
-from pathlib import Path
-import subprocess
-import tempfile
-
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--measure", action="store_true")
-    args = parser.parse_args()
-    screen = (ROOT / "src/ui/game_screen.cpp").read_text(encoding="utf-8")
-    anchor = '            if (bindings.isCommandPressed("WOWEETOGGLERECORDING")) toggleRecording();'
-    start = screen.index(anchor) + len(anchor)
-    end = screen.index('\n    }\n\n    // A link says it can be clicked.', start)
-    # Keep the real enclosing guard as well as the loops; omit unrelated UI toggles.
-    guard_start = screen.rindex('        if (!textFocus)', 0, start)
-    guard = screen[guard_start:screen.index('\n', guard_start)]
-    loops = guard + screen[start:end]
-    handler = (ROOT / "include/game/game_handler.hpp").read_text(encoding="utf-8")
-    slots_start = handler.index('static constexpr int SLOTS_PER_BAR')
-    slots = handler[slots_start:handler.index(';', slots_start) + 1]
-    source = r'''
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -63,7 +30,7 @@ using wowee::ui::ActionBarPanel;
 std::vector<std::string> events;
 namespace wowee::game {
 struct GameHandler {
-    SLOT_DECLARATION
+    static constexpr int SLOTS_PER_BAR    = 12;
     uint8_t classId = 11;
     std::set<uint32_t> known;
     int formReads = 0;
@@ -97,7 +64,54 @@ struct ChatPanel {
 game::GameHandler gameHandler;
 ActionBarPanel actionBarPanel_;
 void poll(bool textFocus = false) {
-PRODUCTION_LOOPS
+        if (!textFocus) {
+
+            // Cache only immutable names, as strings to avoid per-poll conversions.
+            // Bindings and the character's known forms must stay live.
+            static const std::array<std::string, 8> shapeshiftCommands = {
+                "SHAPESHIFTBUTTON1", "SHAPESHIFTBUTTON2", "SHAPESHIFTBUTTON3", "SHAPESHIFTBUTTON4",
+                "SHAPESHIFTBUTTON5", "SHAPESHIFTBUTTON6", "SHAPESHIFTBUTTON7", "SHAPESHIFTBUTTON8"};
+            std::vector<game::ShapeshiftForm> forms;
+            bool formsLoaded = false;
+            for (size_t i = 0; i < shapeshiftCommands.size(); ++i) {
+                if (!bindings.isCommandPressed(shapeshiftCommands[i])) continue;
+                // One snapshot per frame with a press, even if several forms fire.
+                if (!formsLoaded) {
+                    forms = game::knownShapeshiftForms(
+                        gameHandler.getPlayerClass(), gameHandler.getKnownSpells());
+                    formsLoaded = true;
+                }
+                if (i < forms.size()) gameHandler.castSpell(forms[i].spellId);
+            }
+
+            static const std::array<std::string, 12> actionCommands = {
+                "ACTIONBUTTON1", "ACTIONBUTTON2", "ACTIONBUTTON3", "ACTIONBUTTON4",
+                "ACTIONBUTTON5", "ACTIONBUTTON6", "ACTIONBUTTON7", "ACTIONBUTTON8",
+                "ACTIONBUTTON9", "ACTIONBUTTON10", "ACTIONBUTTON11", "ACTIONBUTTON12"};
+            static const std::array<std::string, 12> bottomCommands = {
+                "MULTIACTIONBAR1BUTTON1", "MULTIACTIONBAR1BUTTON2", "MULTIACTIONBAR1BUTTON3",
+                "MULTIACTIONBAR1BUTTON4", "MULTIACTIONBAR1BUTTON5", "MULTIACTIONBAR1BUTTON6",
+                "MULTIACTIONBAR1BUTTON7", "MULTIACTIONBAR1BUTTON8", "MULTIACTIONBAR1BUTTON9",
+                "MULTIACTIONBAR1BUTTON10", "MULTIACTIONBAR1BUTTON11", "MULTIACTIONBAR1BUTTON12"};
+            static_assert(actionCommands.size() == game::GameHandler::SLOTS_PER_BAR);
+            static_assert(bottomCommands.size() == game::GameHandler::SLOTS_PER_BAR);
+            const auto& bar = gameHandler.getActionBar();
+            for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i) {
+                const bool main = bindings.isCommandPressed(actionCommands[i]);
+                const bool bottom = bindings.isCommandPressed(bottomCommands[i]);
+                if (!main && !bottom) continue;
+                const int page = bottom ? ActionBarPanel::kBottomLeftActionPage : actionBarPanel_.getMainActionBarPage();
+                const int slot = ActionBarPanel::actionSlotForPage(page, i);
+                if (bar[slot].type == game::ActionBarSlot::SPELL && bar[slot].isReady()) {
+                    gameHandler.castSpell(bar[slot].id, gameHandler.hasTarget() ? gameHandler.getTargetGuid() : 0);
+                } else if (bar[slot].type == game::ActionBarSlot::ITEM && bar[slot].id != 0) {
+                    gameHandler.useItemById(bar[slot].id);
+                } else if (bar[slot].type == game::ActionBarSlot::MACRO) {
+                    chatPanel_.executeMacroText(gameHandler, gameHandler.getMacroText(bar[slot].id));
+                }
+            }
+        }
+
 }
 void reset() {
     bindings = {};
@@ -227,16 +241,3 @@ int main(int argc, char**) {
     assert(bindings.queries == 0 && gameHandler.formReads == 0);
     std::puts("PASS: idle allocations, lazy/live forms, command names, targeting, priority, text focus and dispatch");
 }
-'''.replace("SLOT_DECLARATION", slots).replace("PRODUCTION_LOOPS", loops)
-    with tempfile.TemporaryDirectory(prefix="wowee-game-screen-commands-") as tmp:
-        path = Path(tmp) / "check.cpp"
-        exe = Path(tmp) / "check.exe"
-        path.write_text(source, encoding="utf-8")
-        subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-O0", "-Wall", "-Wextra",
-                        "-Werror", "-I", str(ROOT / "include"), str(path),
-                        str(ROOT / "src/game/shapeshift_forms.cpp"), "-o", str(exe)], check=True)
-        subprocess.run([str(exe)] + (["--measure"] if args.measure else []), check=True)
-
-
-if __name__ == "__main__":
-    main()

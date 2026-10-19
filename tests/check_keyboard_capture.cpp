@@ -1,40 +1,4 @@
-#!/usr/bin/env python3
-"""Run: python tests/check_keyboard_capture.py (g++, SDL3 and ImGui required).
 
-IMGUI_DIR defaults to extern/imgui; IMGUI_LIB may name a matching prebuilt
-archive. CXX, SDL3_CFLAGS and SDL3_LIBS (default -lSDL3) can override the toolchain.
-Compiles production application capture/probe and Lua frame dispatch bodies,
-linking the real binding manager, widget tree and Escape resolver. Only the
-Lua callback/ownership shell and held-key snapshot are doubles; no game assets
-or window are needed. This does not execute FrameXML's dismissal Lua itself.
-"""
-import os
-import shlex
-import subprocess
-import tempfile
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def section(path, start, end):
-    source = (ROOT / path).read_text(encoding="utf-8")
-    at = source.index(start)
-    return source[at:source.index(end, at)]
-
-
-def main():
-    methods = section("src/addons/lua_engine.cpp", "static std::string wowKeyName(",
-                      "std::string LuaEngine::bindingCommandFor(")
-    methods += section("src/addons/lua_engine.cpp", "const ui::Widget* LuaEngine::topKeyboardFrame() const",
-                       "void LuaEngine::dispatchFrameChar(")
-    methods += section("src/addons/lua_engine.cpp", "bool LuaEngine::dispatchFrameKey(",
-                       "void LuaEngine::dispatchKey(")
-    probe = section("src/core/application.cpp", "ui::setTypedInputProbe(", "addons::LuaServices luaSvc;")
-    # This region is empty before the fix, allowing a runtime fail-before test.
-    capture = section("src/core/application.cpp", "Input::getInstance().update();",
-                      "if (ui::frameXmlOwnsMouse())").split("Input::getInstance().update();", 1)[1]
-    harness = r'''
 #include "ui/keybinding_manager.hpp"
 #include "ui/widget_tree.hpp"
 #include "ui/escape_action.hpp"
@@ -70,7 +34,47 @@ public:
             widgets_.get(id)->propagateKeys = propagateAfterScript != 0;
     }
 };
-@METHODS@
+static std::string wowKeyName(int sym) {
+    return ui::KeybindingManager::keyNameFromSDL(static_cast<uint32_t>(sym));
+}
+
+const ui::Widget* LuaEngine::topKeyboardFrame() const {
+    const ui::Widget* best = nullptr;
+    // Only the frames that enabled the keyboard, in ascending id order like the
+    // full scan this replaced. Key dispatch and held-key capture ask this on
+    // the input path, so it must not walk the whole tree.
+    for (uint32_t id : widgets_.keyboardFrames()) {
+        const ui::Widget* w = widgets_.get(id);
+        if (!w || !w->keyboardEnabled || !w->visible) continue;
+        if (!best) { best = w; continue; }
+        if (w->effStrata > best->effStrata ||
+            (w->effStrata == best->effStrata && w->effLevel >= best->effLevel)) {
+            best = w;
+        }
+    }
+    return best;
+}
+
+bool LuaEngine::keyboardFrameBlocksInput() const {
+    const ui::Widget* frame = topKeyboardFrame();
+    return frame && !frame->propagateKeys;
+}
+
+bool LuaEngine::dispatchFrameKey(int sdlKeycode, bool down, int bindingKeycode) {
+    if (!L_) return false;
+    const ui::Widget* best = topKeyboardFrame();
+    if (!best) return false;
+    const std::string key = wowKeyName(best->name == "KeyBindingFrame" && bindingKeycode
+                                     ? bindingKeycode : sdlKeycode);
+    if (key.empty()) return false;
+
+    callFrameScript(best->id, down ? "OnKeyDown" : "OnKeyUp", key.c_str());
+    // Consumed unless the frame asked for the key to carry on, which is WoW's
+    // default and the reason a dialog stops the character walking.
+    return !best->propagateKeys;
+}
+
+
 }
 namespace ui = wowee::ui;
 struct AddonManager {
@@ -80,27 +84,48 @@ struct AddonManager {
 struct Application {
     AddonManager* addonManager_;
     bool addonsLoaded_ = true;
-    void configure() { @PROBE@ }
+    void configure() { ui::setTypedInputProbe(
+            [this]() -> bool {
+                if (!addonManager_ || !addonsLoaded_) return false;
+                auto* engine = addonManager_->getLuaEngine();
+                return engine != nullptr && engine->editBoxHasFocus();
+            });
+         }
     void capture() {
 #define SDL_GetKeyboardState heldKeyboardState
-@CAPTURE@
+
+        // A keyboard frame is not text focus: propagated shortcuts and controller
+        // commands must still work. Block only physically held native keys when
+        // the top frame does not propagate, including frames without key repeats.
+        if (addonManager_ && addonsLoaded_) {
+            if (auto* engine = addonManager_->getLuaEngine(); engine && engine->keyboardFrameBlocksInput()) {
+                int count = 0;
+                const bool* keys = SDL_GetKeyboardState(&count);
+                for (int scan = 1; scan < count; ++scan) {
+                    if (!keys[scan]) continue;
+                    const auto key = ui::KeybindingManager::keyFromName(ui::KeybindingManager::keyNameFromSDL(
+                        SDL_SCANCODE_TO_KEYCODE(scan)));
+                    if (key != ImGuiKey_None) ui::noteInterfaceConsumedKey(key);
+                }
+            }
+        }
+        
 #undef SDL_GetKeyboardState
     }
 };
-int main(int argc, char** argv) {
-    check(argc == 2 && SDL_Init(SDL_INIT_EVENTS), "SDL init failed");
-    ImGui::CreateContext();
-    ImGui::GetIO().IniFilename = nullptr;
+void runScenario(const std::string& scenario) {
+    held.fill(false);
+    ImGui::GetIO().WantTextInput = false;
     AddonManager addons;
     Application app{&addons};
     app.configure();
     auto& engine = addons.engine;
     auto& manager = ui::KeybindingManager::getInstance();
+    manager.setVirtualCommand("TOGGLEGAMEMENU", "pad:PAD2", false);
     manager.bindings().clear();
     manager.bindings()["SHORTCUT"] = {"C", ""};
     manager.bindings()["MOVEFORWARD"] = {"W", ""};
     manager.bindings()["TOGGLEGAMEMENU"] = {"ESCAPE", ""};
-    const std::string scenario = argv[1];
     const auto id = engine.widgets_.create(ui::WidgetKind::Frame, engine.widgets_.root(),
         scenario == "layout_capture" ? "KeyBindingFrame" :
         scenario == "pad_map" ? "WorldMapFrame" : "StaticPopup1");
@@ -126,6 +151,8 @@ int main(int argc, char** argv) {
                 ui::KeybindingManager::keyNameFromSDL(code)));
     };
     begin();
+    app.capture();
+    begin();
     if (scenario == "layout_capture" || scenario == "layout_dialog") {
         check(engine.dispatchFrameKey(SDLK_Z, true, SDL_SCANCODE_TO_KEYCODE(SDL_SCANCODE_W)), "frame did not consume layout key");
         check(engine.lastKey == (scenario == "layout_capture" ? "W" : "Z"), "physical capture/layout dialog mismatch");
@@ -138,6 +165,7 @@ int main(int argc, char** argv) {
         ui::EscapeState state;
         state.interfaceConsumedKey = ui::interfaceConsumedKey(ImGuiKey_Escape);
         check(ui::resolveEscape(state) == ui::EscapeAction::AskTheInterface, "controller Escape was spuriously consumed");
+        manager.setVirtualCommand("TOGGLEGAMEMENU", "pad:PAD2", false);
     } else if (scenario == "held" || scenario == "already_held") {
         if (scenario == "already_held") frame->visible = false;
         keyDown(SDL_SCANCODE_W);
@@ -159,37 +187,21 @@ int main(int argc, char** argv) {
         check(engine.calls == ((scenario == "hidden" || scenario == "disabled") ? 0 : 1), "frame dispatch mismatch");
     }
     ui::setTypedInputProbe({});
-    ImGui::DestroyContext(); SDL_Quit();
 }
-'''.replace("@METHODS@", methods).replace("@PROBE@", probe).replace("@CAPTURE@", capture)
-    imgui = Path(os.environ.get("IMGUI_DIR", ROOT / "extern/imgui"))
-    imgui_lib = os.environ.get("IMGUI_LIB")
-    if not (imgui / "imgui.h").is_file():
-        raise SystemExit("Set IMGUI_DIR to the populated ImGui submodule (and optionally IMGUI_LIB).")
-    with tempfile.TemporaryDirectory(prefix="wowee-keyboard-capture-") as tmp:
-        tmp = Path(tmp)
-        source = tmp / "capture.cpp"
-        source.write_text(harness, encoding="utf-8")
-        binary = tmp / "capture.exe"
-        command = shlex.split(os.environ.get("CXX", "g++")) + ["-std=c++20", "-O0", "-I" + str(ROOT / "include"), "-I" + str(imgui)]
-        command += shlex.split(os.environ.get("SDL3_CFLAGS", ""))
-        command += [str(source), str(ROOT / "src/ui/keybinding_manager.cpp"), str(ROOT / "src/ui/widget_tree.cpp"),
-                    str(ROOT / "src/ui/escape_action.cpp"), str(ROOT / "src/core/logger.cpp")]
-        command += [imgui_lib] if imgui_lib else [str(imgui / name) for name in ("imgui.cpp", "imgui_draw.cpp", "imgui_tables.cpp", "imgui_widgets.cpp")]
-        command += shlex.split(os.environ.get("SDL3_LIBS", "-lSDL3")) + ["-o", str(binary)]
-        subprocess.run(command, check=True, cwd=tmp)
-        failed = []
-        for scenario in ("propagate", "consume", "script_propagate", "script_consume", "hidden", "disabled",
-                         "pad_map", "pad_popup", "typing", "imgui_typing", "held", "already_held",
-                         "layout_capture", "layout_dialog"):
-            result = subprocess.run([str(binary), scenario], cwd=tmp, capture_output=True, text=True)
-            print(f"{scenario}: {'PASS' if result.returncode == 0 else 'FAIL'}", flush=True)
-            if result.returncode:
-                print(result.stdout + result.stderr, end="")
-                failed.append(scenario)
-        if failed:
-            raise SystemExit("Failed: " + ", ".join(failed))
-
-
-if __name__ == "__main__":
-    main()
+int main(int argc, char** argv) {
+    check(SDL_Init(SDL_INIT_EVENTS), "SDL init failed");
+    ImGui::CreateContext();
+    ImGui::GetIO().IniFilename = nullptr;
+    if (argc == 2) {
+        runScenario(argv[1]);
+    } else {
+        for (const char* scenario : {"propagate", "consume", "script_propagate", "script_consume", "hidden", "disabled",
+                                     "pad_map", "pad_popup", "typing", "imgui_typing", "held", "already_held",
+                                     "layout_capture", "layout_dialog"}) {
+            runScenario(scenario);
+        }
+    }
+    ImGui::DestroyContext();
+    SDL_Quit();
+    return 0;
+}

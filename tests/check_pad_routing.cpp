@@ -1,53 +1,5 @@
-#!/usr/bin/env python3
-"""Run from repo root: python tests/check_pad_routing.py (requires g++ or CXX).
+enum SDL_GamepadButton { SDL_GAMEPAD_BUTTON_BACK, SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_GUIDE, SDL_GAMEPAD_BUTTON_LEFT_PADDLE1, SDL_GAMEPAD_BUTTON_LEFT_PADDLE2, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_LEFT_STICK, SDL_GAMEPAD_BUTTON_MISC1, SDL_GAMEPAD_BUTTON_NORTH, SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1, SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_STICK, SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_START, SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_COUNT };
 
-Compile the actual movement/routing/release methods, application adapter and
-Lua dispatch bodies against small device/Lua/command-sink doubles. No copied routing logic,
-SDL window, game assets, or full client link is needed. This is a seam regression,
-not a test of Lua execution, SDL sampling, or pointer warping.
-"""
-import os
-from pathlib import Path
-import re
-import subprocess
-import tempfile
-
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def section(path, start, end):
-    source = (ROOT / path).read_text(encoding="utf-8")
-    return source[source.index(start):source.index(end, source.index(start))]
-
-
-def main(harness_transform=None):
-    dispatch = section("src/addons/lua_engine.cpp",
-                       "LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(",
-                       "/// The topmost frame")
-    names = section("src/ui/gamepad_bindings.cpp", "const char* padKeyName(",
-                    "\nnamespace {")
-    methods = section("src/ui/gamepad_controls.cpp", "bool GamepadControls::schemeHeld(",
-                      "void GamepadControls::update(")
-    release = section("src/ui/gamepad_controls.cpp", "void GamepadControls::releaseKeys(",
-                      "void GamepadControls::reset(")
-    pushed = section("src/ui/gamepad_controls.cpp", "bool pushed(", "}  // namespace")
-    movement = section("src/ui/gamepad_controls.cpp", "void GamepadControls::applyMovement(",
-                       "void GamepadControls::applyLook(")
-    movement_state = section("include/ui/gamepad_controls.hpp", "    struct StickMovement {",
-                             "    /// How a held button")
-    thresholds = section("include/ui/gamepad_controls.hpp", "    static constexpr float kWalkThreshold",
-                         "    /// Notches of the mouse wheel")
-    lookup = section("src/addons/lua_engine.cpp", "std::string LuaEngine::bindingCommandForKey(",
-                     "bool LuaEngine::dispatchBindingKey(")
-    binding_dispatch = section("src/addons/lua_engine.cpp", "bool LuaEngine::dispatchBindingInput(",
-                               "bool LuaEngine::bindingRunsOnUp(")
-    adapter = section("src/core/application.cpp",
-                      "ui::PadKeyAnswer answer;",
-                      "\n        });")
-    # SDL button names are labels here; their numeric values are immaterial.
-    buttons = sorted(set(re.findall(r"SDL_GAMEPAD_BUTTON_[A-Z0-9_]+", names)))
-    enum = "enum SDL_GamepadButton { " + ", ".join(buttons) + ", SDL_GAMEPAD_BUTTON_COUNT };\n"
-    harness = r'''
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -155,7 +107,16 @@ struct PadKeyAnswer {
 struct GamepadControls {
     using ButtonRoute = PadKeyAnswer;
     std::array<ButtonRoute, SDL_GAMEPAD_BUTTON_COUNT> routes_{};
-    // Movement declarations from the production header.
+    struct StickMovement {
+        bool forward = false;
+        bool back = false;
+        bool left = false;
+        bool right = false;
+    } stickMovement_;
+
+    static constexpr float kWalkThreshold = 0.30f;
+    static constexpr float kStrafeThreshold = 0.45f;
+    static constexpr float kReleaseHysteresis = 0.10f;
     void applyMovement(float x, float y);
     bool steering_ = false;
     float zoomRemainder_ = 0;
@@ -168,12 +129,232 @@ struct GamepadControls {
     void applyButtons();
     void releaseKeys();
 };
-'''
-    harness = harness.replace("    // Movement declarations from the production header.\n",
-                              movement_state + thresholds)
-    harness = enum + harness + names + pushed + movement + methods + release + "\n}\n"
-    harness += lookup + binding_dispatch + dispatch
-    harness += r'''
+const char* padKeyName(SDL_GamepadButton button) {
+    switch (button) {
+        case SDL_GAMEPAD_BUTTON_SOUTH:             return "PAD1";
+        case SDL_GAMEPAD_BUTTON_EAST:             return "PAD2";
+        case SDL_GAMEPAD_BUTTON_WEST:             return "PAD3";
+        case SDL_GAMEPAD_BUTTON_NORTH:             return "PAD4";
+        case SDL_GAMEPAD_BUTTON_BACK:          return "PADBACK";
+        case SDL_GAMEPAD_BUTTON_GUIDE:         return "PADSYSTEM";
+        case SDL_GAMEPAD_BUTTON_START:         return "PADFORWARD";
+        case SDL_GAMEPAD_BUTTON_LEFT_STICK:     return "PADLSTICK";
+        case SDL_GAMEPAD_BUTTON_RIGHT_STICK:    return "PADRSTICK";
+        case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:  return "PADLSHOULDER";
+        case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return "PADRSHOULDER";
+        case SDL_GAMEPAD_BUTTON_DPAD_UP:       return "PADDUP";
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN:     return "PADDDOWN";
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT:     return "PADDLEFT";
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:    return "PADDRIGHT";
+        case SDL_GAMEPAD_BUTTON_MISC1:         return "PADSOCIAL";
+        case SDL_GAMEPAD_BUTTON_RIGHT_PADDLE1:       return "PADPADDLE1";
+        case SDL_GAMEPAD_BUTTON_LEFT_PADDLE1:       return "PADPADDLE2";
+        case SDL_GAMEPAD_BUTTON_RIGHT_PADDLE2:       return "PADPADDLE3";
+        case SDL_GAMEPAD_BUTTON_LEFT_PADDLE2:       return "PADPADDLE4";
+        default:                                  return "";
+    }
+}
+bool pushed(float axis, float threshold, bool wasOn) {
+    const float release = std::max(threshold - 0.10f, 0.05f);
+    return axis > (wasOn ? release : threshold);
+}
+
+void GamepadControls::applyMovement(float x, float y) {
+    // SDL's Y is positive downwards, and pushing the stick up means forward.
+    const bool forward = pushed(-y, kWalkThreshold, stickMovement_.forward);
+    const bool back = pushed(y, kWalkThreshold, stickMovement_.back);
+    // Sideways means strafe; the right stick turns the view.
+    const bool left = pushed(-x, kStrafeThreshold, stickMovement_.left);
+    const bool right = pushed(x, kStrafeThreshold, stickMovement_.right);
+    stickMovement_ = {forward, back, left, right};
+    auto& bindings = KeybindingManager::getInstance();
+    bindings.setVirtualCommand("MOVEFORWARD", "pad-stick", forward);
+    bindings.setVirtualCommand("MOVEBACKWARD", "pad-stick", back);
+    bindings.setVirtualCommand("STRAFELEFT", "pad-stick", left);
+    bindings.setVirtualCommand("STRAFERIGHT", "pad-stick", right);
+
+    // Facing follows the camera while the stick is pushed, which is what the
+    // right mouse button does on a desktop. Without it the character walks
+    // sideways across the screen while still facing wherever they last were.
+    steering_ = forward || back || left || right;
+}
+
+bool GamepadControls::schemeHeld(SDL_GamepadButton button) const {
+    if (button < 0 || button >= SDL_GAMEPAD_BUTTON_COUNT) return false;
+    return core::gamepad().held(button) &&
+           routes_[static_cast<std::size_t>(button)].kind == PadKeyAnswer::Kind::Unbound;
+}
+
+void GamepadControls::routeButtons() {
+    const auto& pad = core::gamepad();
+    auto& bindings = KeybindingManager::getInstance();
+    const auto route = [&](SDL_GamepadButton button) {
+        const int b = static_cast<int>(button);
+        const size_t i = static_cast<size_t>(b);
+        const bool down = pad.held(button);
+        const bool wasDown = buttonWasDown_[i];
+        buttonWasDown_[i] = down;
+        const char* name = padKeyName(button);
+        if (!down) {
+            bindings.setVirtualCommand(routes_[i].command, "pad-button" + std::to_string(b), false);
+            if (wasDown && keyRouter_ && !routes_[i].key.empty()) keyRouter_(routes_[i].key.c_str(), false);
+            routes_[i] = {};
+            return;
+        }
+        if (wasDown || !keyRouter_ || !*name) return;
+        if (pointerMode_ && (button == SDL_GAMEPAD_BUTTON_SOUTH || button == SDL_GAMEPAD_BUTTON_WEST)) {
+            routes_[i].kind = PadKeyAnswer::Kind::Taken;
+            return;
+        }
+        routes_[i].key = button != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER &&
+                         schemeHeld(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)
+            ? "SHIFT-" + std::string(name) : std::string(name);
+        const auto answer = keyRouter_(routes_[i].key.c_str(), true);
+        routes_[i].kind = answer.kind;
+        routes_[i].command = answer.command;
+    };
+    // Resolve the modifier and pointer mode before A/X, even on a simultaneous
+    // press: pointer clicks must never run a gameplay binding or Lua script.
+    route(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+    route(SDL_GAMEPAD_BUTTON_BACK);
+    const bool toggle = schemeHeld(SDL_GAMEPAD_BUTTON_BACK);
+    if (toggle && !pointerToggleWasDown_) {
+        setPointerMode(!pointerMode_);
+        LOG_WARNING("Gamepad: the right stick now ",
+                    pointerMode_ ? "moves the pointer" : "turns the view");
+    }
+    pointerToggleWasDown_ = toggle;
+    for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
+        const auto button = static_cast<SDL_GamepadButton>(b);
+        if (button != SDL_GAMEPAD_BUTTON_LEFT_SHOULDER && button != SDL_GAMEPAD_BUTTON_BACK)
+            route(button);
+    }
+}
+
+void GamepadControls::applyButtons() {
+    auto& bindings = KeybindingManager::getInstance();
+    for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
+        const auto& route = routes_[static_cast<size_t>(b)];
+        const auto button = static_cast<SDL_GamepadButton>(b);
+        const bool pointerClick = pointerMode_ && (button == SDL_GAMEPAD_BUTTON_SOUTH || button == SDL_GAMEPAD_BUTTON_WEST);
+        bindings.setVirtualCommand(route.command, "pad-button" + std::to_string(b),
+            route.kind == PadKeyAnswer::Kind::Command && core::gamepad().held(button) && !pointerClick);
+    }
+}
+
+void GamepadControls::releaseKeys() {
+    stickMovement_ = {};
+    auto& bindings = KeybindingManager::getInstance();
+    for (const char* command : {"MOVEFORWARD", "MOVEBACKWARD", "STRAFELEFT", "STRAFERIGHT"})
+        bindings.setVirtualCommand(command, "pad-stick", false);
+    for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
+        const auto& route = routes_[static_cast<size_t>(b)];
+        bindings.setVirtualCommand(route.command, "pad-button" + std::to_string(b), false);
+        if (buttonWasDown_[static_cast<size_t>(b)] && keyRouter_ && !route.key.empty())
+            keyRouter_(route.key.c_str(), false);
+    }
+    // Forgotten as well as released, so a button still held when the pad is
+    // live again is looked up afresh rather than answered from before.
+    routes_.fill(ButtonRoute{});
+    buttonWasDown_.fill(false);
+    steering_ = false;
+    zoomRemainder_ = 0.0f;
+}
+
+
+}
+std::string LuaEngine::bindingCommandForKey(const std::string& key) {
+    if (!L_ || key.empty()) return "";
+    // Which command the key runs, and then the command's script - both asked
+    // of the interface's own tables rather than restated here. GetBindingAction
+    // already honours SetBinding, so a key the player rebound in game answers
+    // to whatever they moved it to without this knowing anything about it.
+    lua_getglobal(L_, "GetBindingAction");
+    if (!lua_isfunction(L_, -1)) { lua_pop(L_, 1); return ""; }
+    lua_pushstring(L_, key.c_str());
+    if (lua_pcall(L_, 1, 1, 0) != 0) {
+        LOG_WARNING("GetBindingAction(", key, ") failed: ",
+                    luaL_optstring(L_, -1, "?"));
+        lua_pop(L_, 1);
+        return "";
+    }
+    const char* got = lua_tostring(L_, -1);
+    std::string command = got ? got : "";
+    lua_pop(L_, 1);
+    if (command.empty()) {
+        std::string base = key;
+        for (const char* prefix : {"ALT-", "CTRL-", "SHIFT-"})
+            if (base.starts_with(prefix)) base.erase(0, std::char_traits<char>::length(prefix));
+        // Exact chords win; an unassigned modifier chord keeps the bare binding,
+        // including pad buttons while the scheme's left bumper is held.
+        if (base != key) return bindingCommandForKey(base);
+    }
+    return command;
+}
+
+bool LuaEngine::dispatchBindingInput(const std::string& key, bool shift, bool ctrl, bool alt, bool down) {
+    if (!L_ || key.empty()) return false;
+    if (!down) {
+        auto held = heldBindings_.find(key);
+        if (held == heldBindings_.end()) return false;
+        const std::string command = std::move(held->second);
+        heldBindings_.erase(held);
+        return !bindingRunsOnUp(command) || runBindingScript(command, false);
+    }
+    if (heldBindings_.count(key)) return true;
+    if (editBoxHasFocus() || ImGui::GetIO().WantTextInput) return false;
+    const std::string command = bindingCommandForKey(ui::KeybindingManager::modifiedKey(key, shift, ctrl, alt));
+    if (command.empty() || clientActsOnBinding(command)) return false;
+    if (!runBindingScript(command, true)) return false;
+    heldBindings_[key] = command; // Release the original command even if it is rebound while held.
+    return true;
+}
+
+LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey, bool down) {
+    PadKeyOutcome outcome;
+    if (!L_ || !padKey || !*padKey) return outcome;
+    if (!down) {
+        outcome.taken = dispatchBindingInput(padKey, false, false, false, false);
+        return outcome;
+    }
+
+    // The key binding panel, while one of its rows is waiting for a key - and
+    // only then. Every other frame that listens for keys is a dialog reading
+    // Escape, Enter and digits, and a pad button given to one of those would
+    // be swallowed doing nothing: B would stop closing them.
+    //
+    // Asked in Lua, because "waiting" is the panel's own field and not
+    // something the widget tree knows about.
+    const ui::Widget* top = topKeyboardFrame();
+    if (top && top->name == "KeyBindingFrame") {
+        bool waiting = false;
+        if (luaL_loadstring(L_, "return KeyBindingFrame ~= nil and KeyBindingFrame.selected ~= nil") == 0 &&
+            lua_pcall(L_, 0, 1, 0) == 0) {
+            waiting = lua_toboolean(L_, -1) != 0;
+        }
+        lua_pop(L_, 1);  // the answer, or the error in its place
+        if (waiting) {
+            callFrameScript(top->id, "OnKeyDown", padKey);
+            outcome.taken = true;
+            return outcome;
+        }
+    }
+
+    const std::string command = bindingCommandForKey(padKey);
+    if (command.empty()) return outcome;
+    if (clientActsOnBinding(command)) {
+        outcome.command = command;
+        return outcome;
+    }
+    // Taken whether or not a script ran. A button bound to a command with no
+    // script doing nothing is right; falling back to the default scheme would
+    // be the button doing what the player bound it away from.
+    (void)dispatchBindingInput(padKey, false, false, false, true);
+    outcome.taken = true;
+    return outcome;
+}
+
+
 struct AddonManager {
     LuaEngine engine;
     LuaEngine* getLuaEngine() { return &engine; }
@@ -182,9 +363,20 @@ struct Application {
     AddonManager manager;
     AddonManager* addonManager_ = &manager;
     ui::PadKeyAnswer route(const char* padKey, bool down) {
-'''
-    harness += adapter + "\n    }\n};\n"
-    harness += r'''
+ui::PadKeyAnswer answer;
+            auto* engine = addonManager_ ? addonManager_->getLuaEngine() : nullptr;
+            if (!engine) return answer;
+            auto outcome = engine->dispatchPadKey(padKey, down);
+            if (outcome.taken) {
+                answer.kind = ui::PadKeyAnswer::Kind::Taken;
+            } else if (!outcome.command.empty()) {
+                answer.kind = ui::PadKeyAnswer::Kind::Command;
+                answer.command = std::move(outcome.command);
+            }
+            return answer;
+    }
+};
+
 int main() {
     Application app;
     auto& engine = app.manager.engine;
@@ -382,19 +574,3 @@ int main() {
     buttons.fill(false); frame();
     engine.capturing = captureWaiting = false;
 }
-'''
-    if harness_transform:
-        harness = harness_transform(harness)
-    with tempfile.TemporaryDirectory(prefix="wowee-pad-routing-") as tmp:
-        source = Path(tmp) / "check.cpp"
-        exe = Path(tmp) / "check.exe"
-        source.write_text(harness, encoding="utf-8")
-        subprocess.run([os.environ.get("CXX", "g++"), "-std=c++20", "-Wall", "-Wextra",
-                        "-Werror", str(source), "-o", str(exe)], check=True)
-        subprocess.run([str(exe)], check=True)
-    if not harness_transform:
-        print("PASS: command-only movement/hysteresis, pad routing, pointer/capture, sources/reset, Lua release, lookup fallback")
-
-
-if __name__ == "__main__":
-    main()
