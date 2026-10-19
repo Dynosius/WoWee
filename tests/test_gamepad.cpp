@@ -333,27 +333,9 @@ TEST_CASE("every pad button has a binding name of its own") {
     CHECK(std::string(wowee::ui::padKeyName(SDL_GAMEPAD_BUTTON_START)) == "PADFORWARD");
 }
 
-TEST_CASE("a button bound to a command the client polls presses the key it polls") {
-    const SDL_Scancode bar[] = {
-        SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4,
-        SDL_SCANCODE_5, SDL_SCANCODE_6, SDL_SCANCODE_7, SDL_SCANCODE_8,
-        SDL_SCANCODE_9, SDL_SCANCODE_0, SDL_SCANCODE_MINUS, SDL_SCANCODE_EQUALS,
-    };
-    for (int i = 0; i < 12; ++i) {
-        const std::string command = "ACTIONBUTTON" + std::to_string(i + 1);
-        INFO(command);
-        CHECK(wowee::ui::padClientKeyFor(command) == bar[i]);
-    }
-    CHECK(wowee::ui::padClientKeyFor("MOVEFORWARD") == SDL_SCANCODE_W);
-    CHECK(wowee::ui::padClientKeyFor("JUMP") == SDL_SCANCODE_SPACE);
-    // A command the interface performs has no key: its script runs instead.
-    CHECK(wowee::ui::padClientKeyFor("TOGGLEFRIENDSTAB") == SDL_SCANCODE_UNKNOWN);
-    CHECK(wowee::ui::padClientKeyFor("") == SDL_SCANCODE_UNKNOWN);
-}
-
-TEST_CASE("binding a button to what the default scheme gave it changes nothing") {
-    // A player who binds X to ACTIONBUTTON1 in the panel has asked for what X
-    // already did, and must get the same key rather than a different one.
+TEST_CASE("pad defaults name the commands seeded into shared bindings") {
+    // The displayed legacy keyboard equivalent is not a gameplay fallback.
+    // Defaults and explicit bindings use these command names directly.
     const std::map<SDL_GamepadButton, std::string> sameCommand = {
         {SDL_GAMEPAD_BUTTON_SOUTH,             "JUMP"},
         {SDL_GAMEPAD_BUTTON_WEST,             "ACTIONBUTTON1"},
@@ -370,7 +352,7 @@ TEST_CASE("binding a button to what the default scheme gave it changes nothing")
         const auto it = sameCommand.find(bindings[i].button);
         if (it == sameCommand.end()) continue;
         INFO(bindings[i].what);
-        CHECK(wowee::ui::padClientKeyFor(it->second) == bindings[i].key);
+        CHECK(std::string(bindings[i].command) == it->second);
     }
 }
 

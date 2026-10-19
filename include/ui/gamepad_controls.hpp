@@ -33,7 +33,6 @@
 #include <span>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <string>
 #include <utility>
@@ -73,8 +72,8 @@ struct PadBinding {
 /// from the poll sites rather than from a list of what WoW binds - and against
 /// what a pad has room for. Twelve action slots do not fit on a controller, so
 /// six sit on the face and the pad, and the left bumper is held to reach the
-/// other six: the client already reads shift as "the bottom-left bar", so the
-/// modifier costs nothing and behaves exactly as it does on a keyboard.
+/// other six through explicit SHIFT-PAD bindings, without synthesising a
+/// keyboard Shift press.
 /// Returned as a span rather than a pointer and an out-parameter: the count
 /// travelling separately is a trap, and it sprang - `check(padExtraBindings(n),
 /// n)` reads n before the call that sets it under one compiler and after it
@@ -106,14 +105,6 @@ struct PadBinding {
 /// as strings. The touchpad click has none: it is the pointer's click, and a
 /// binding on it would leave a trackpad that cannot click.
 [[nodiscard]] const char* padKeyName(SDL_GamepadButton button);
-
-/// The key the client polls for a binding command it performs itself, or
-/// SDL_SCANCODE_UNKNOWN when it does not read that command from a scancode.
-///
-/// A button bound to one of these holds that key down, because the poll sites
-/// read fixed scancodes rather than the binding table - pressing the key is
-/// the only way in.
-[[nodiscard]] SDL_Scancode padClientKeyFor(const std::string& command);
 
 /// What the interface made of a pad button, asked once as it goes down.
 struct PadKeyAnswer {
@@ -158,9 +149,8 @@ private:
 /**
  * The controller, applied to the client, once a frame.
  *
- * Owns the keys it sets. A key this has not held down is never cleared by it,
- * so on a phone with a pad attached the on-screen stick and the pad can both
- * drive W without one of them switching the other off.
+ * Owns its virtual command sources, so an on-screen stick and a pad can both
+ * drive movement without one of them switching the other off.
  */
 class GamepadControls {
 public:
@@ -220,8 +210,8 @@ public:
     /// rather than next.
     void update(float deltaTime);
 
-    /// Releases every key this is holding. On leaving the world, on losing the
-    /// pad, and when the interface takes the keyboard.
+    /// Releases held commands, scripts and mouse buttons. On leaving the
+    /// world, on losing the pad, and when the interface takes the keyboard.
     void reset();
 
     /// True while the stick is being pushed, which is when the character
@@ -245,22 +235,13 @@ public:
     [[nodiscard]] bool isInvertLook() const { return invertLook_; }
 
 private:
-    /// What is holding a virtual key, as bits, so one source letting go does
-    /// not release a key another still holds - the stick's W and the W of a
-    /// button bound to MOVEFORWARD.
-    static constexpr std::uint8_t kFromStick = 1;
-    static constexpr std::uint8_t kFromButtons = 2;
-
     /// Releases movement, button commands and binding scripts, but not the
     /// pointer's mouse buttons: the touchpad drives those, and it goes on
     /// working where the rest of the pad does not - outside the world, and
     /// while the player is typing.
     void releaseKeys();
 
-    /// Sets a virtual key on behalf of one source and remembers which.
-    void holdKey(SDL_Scancode key, bool held, std::uint8_t source);
-
-    /// The left stick, as the four keys the client walks on.
+    /// The left stick, as four movement commands.
     void applyMovement(float x, float y);
     /// The right stick, as a turn of the view.
     void applyLook(float x, float y, float deltaTime);
@@ -312,9 +293,14 @@ private:
     bool invertLook_ = false;
     bool announced_ = false;
 
-    /// Which sources are holding each key down, so that letting go clears
-    /// those and only those.
-    std::array<std::uint8_t, SDL_SCANCODE_COUNT> heldKeys_{};
+    /// Pad-local movement state for hysteresis, independent of keyboard keys
+    /// and of other sources holding the same commands.
+    struct StickMovement {
+        bool forward = false;
+        bool back = false;
+        bool left = false;
+        bool right = false;
+    } stickMovement_;
 
     /// How a held button is being answered, decided as it went down and kept
     /// until it comes up - a binding changed mid-press applies from the next.

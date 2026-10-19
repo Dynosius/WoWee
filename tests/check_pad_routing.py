@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run from repo root: python tests/check_pad_routing.py (requires g++ or CXX).
 
-Compile the actual routing/release methods, application adapter and Lua dispatch
-bodies against small device/Lua/command-sink doubles. No copied routing logic,
+Compile the actual movement/routing/release methods, application adapter and
+Lua dispatch bodies against small device/Lua/command-sink doubles. No copied routing logic,
 SDL window, game assets, or full client link is needed. This is a seam regression,
 not a test of Lua execution, SDL sampling, or pointer warping.
 """
@@ -25,11 +25,18 @@ def main(harness_transform=None):
                        "LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(",
                        "/// The topmost frame")
     names = section("src/ui/gamepad_bindings.cpp", "const char* padKeyName(",
-                    "SDL_Scancode padClientKeyFor(")
+                    "\nnamespace {")
     methods = section("src/ui/gamepad_controls.cpp", "bool GamepadControls::schemeHeld(",
                       "void GamepadControls::update(")
     release = section("src/ui/gamepad_controls.cpp", "void GamepadControls::releaseKeys(",
                       "void GamepadControls::reset(")
+    pushed = section("src/ui/gamepad_controls.cpp", "bool pushed(", "}  // namespace")
+    movement = section("src/ui/gamepad_controls.cpp", "void GamepadControls::applyMovement(",
+                       "void GamepadControls::applyLook(")
+    movement_state = section("include/ui/gamepad_controls.hpp", "    struct StickMovement {",
+                             "    /// How a held button")
+    thresholds = section("include/ui/gamepad_controls.hpp", "    static constexpr float kWalkThreshold",
+                         "    /// Notches of the mouse wheel")
     lookup = section("src/addons/lua_engine.cpp", "std::string LuaEngine::bindingCommandForKey(",
                      "bool LuaEngine::dispatchBindingKey(")
     binding_dispatch = section("src/addons/lua_engine.cpp", "bool LuaEngine::dispatchBindingInput(",
@@ -41,6 +48,7 @@ def main(harness_transform=None):
     buttons = sorted(set(re.findall(r"SDL_GAMEPAD_BUTTON_[A-Z0-9_]+", names)))
     enum = "enum SDL_GamepadButton { " + ", ".join(buttons) + ", SDL_GAMEPAD_BUTTON_COUNT };\n"
     harness = r'''
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <functional>
@@ -130,12 +138,13 @@ Pad& gamepad() { static Pad pad; return pad; }
 struct Input {
     static Input& getInstance() { static Input i; return i; }
     std::set<int> activeKeys;
+    int virtualKeyWrites = 0;
     void setVirtualKey(int key, bool down) {
+        ++virtualKeyWrites;
         if (down) activeKeys.insert(key); else activeKeys.erase(key);
     }
 };
 }
-using SDL_Scancode = int;
 namespace ui {
 struct PadKeyAnswer {
     enum class Kind { Unbound, Taken, Command };
@@ -146,7 +155,8 @@ struct PadKeyAnswer {
 struct GamepadControls {
     using ButtonRoute = PadKeyAnswer;
     std::array<ButtonRoute, SDL_GAMEPAD_BUTTON_COUNT> routes_{};
-    std::array<std::uint8_t, 8> heldKeys_{};
+    // Movement declarations from the production header.
+    void applyMovement(float x, float y);
     bool steering_ = false;
     float zoomRemainder_ = 0;
     std::array<bool, SDL_GAMEPAD_BUTTON_COUNT> buttonWasDown_{};
@@ -159,7 +169,9 @@ struct GamepadControls {
     void releaseKeys();
 };
 '''
-    harness = enum + harness + names + methods + release + "\n}\n"
+    harness = harness.replace("    // Movement declarations from the production header.\n",
+                              movement_state + thresholds)
+    harness = enum + harness + names + pushed + movement + methods + release + "\n}\n"
     harness += lookup + binding_dispatch + dispatch
     harness += r'''
 struct AddonManager {
@@ -280,10 +292,8 @@ int main() {
     engine.bindings = {{"PAD1", "JUMP"}, {"PAD3", "SCRIPT"}};
     buttons[a] = buttons[x] = true; frame();
     sink.setVirtualCommand("JUMP", "touch", true);
-    sink.setVirtualCommand("MOVEFORWARD", "pad-stick", true);
+    controls.applyMovement(0.0f, -1.0f);
     sink.setVirtualCommand("MOVEFORWARD", "touch", true);
-    controls.heldKeys_[1] = 1;
-    core::Input::getInstance().setVirtualKey(1, true);
     controls.steering_ = true; controls.zoomRemainder_ = 0.5f;
     controls.releaseKeys();
     assert(engine.heldBindings_.empty());
@@ -294,12 +304,65 @@ int main() {
         assert(route.kind == ui::PadKeyAnswer::Kind::Unbound && route.key.empty() && route.command.empty());
     }
     for (bool held : controls.buttonWasDown_) assert(!held);
-    for (auto held : controls.heldKeys_) assert(!held);
     assert(core::Input::getInstance().activeKeys.empty());
     assert(!controls.steering_ && controls.zoomRemainder_ == 0);
     sink.setVirtualCommand("JUMP", "touch", false);
     sink.setVirtualCommand("MOVEFORWARD", "touch", false);
     buttons.fill(false); frame();
+
+    // Movement is command-only: never write keyboard state, including Shift
+    // owned by another input path. Exercise actual applyMovement and pushed.
+    auto& input = core::Input::getInstance();
+    constexpr int keyboardW = 1, keyboardShift = 2; // opaque Input-double keys
+    input.setVirtualKey(keyboardW, true);
+    input.setVirtualKey(keyboardShift, true);
+    const auto externalKeys = input.activeKeys;
+    const int keyWrites = input.virtualKeyWrites;
+    controls.applyMovement(0.0f, -1.0f);
+    assert(input.virtualKeyWrites == keyWrites);
+    controls.releaseKeys();
+    struct Direction { float x, y, threshold; const char* command; };
+    for (const auto d : {Direction{0, -1, 0.30f, "MOVEFORWARD"},
+                         Direction{0, 1, 0.30f, "MOVEBACKWARD"},
+                         Direction{-1, 0, 0.45f, "STRAFELEFT"},
+                         Direction{1, 0, 0.45f, "STRAFERIGHT"}}) {
+        const auto move = [&](float amount) { controls.applyMovement(d.x * amount, d.y * amount); };
+        move(d.threshold); assert(active.empty() && !controls.steering_);
+        const int edges = sink.edges[d.command];
+        move(d.threshold + 0.01f);
+        assert(active == std::set<std::string>{d.command} && controls.steering_);
+        move(d.threshold - 0.05f);
+        assert(active == std::set<std::string>{d.command} && controls.steering_);
+        assert(sink.edges[d.command] == edges + 1);
+        move(d.threshold - 0.10f); assert(active.empty() && !controls.steering_);
+        move(d.threshold - 0.05f); assert(active.empty());
+        move(1.0f); controls.releaseKeys();
+        assert(active.empty() && !controls.steering_);
+        // Reset forgets hysteresis too: the release band cannot restart a walk.
+        move(d.threshold - 0.05f); assert(active.empty() && !controls.steering_);
+    }
+    controls.applyMovement(-1.0f, -1.0f);
+    assert((active == std::set<std::string>{"MOVEFORWARD", "STRAFELEFT"}));
+    controls.applyMovement(1.0f, 1.0f);
+    assert((active == std::set<std::string>{"MOVEBACKWARD", "STRAFERIGHT"}));
+    controls.releaseKeys(); assert(active.empty());
+    // Neutral and reset release only the pad's movement source, never touch.
+    const std::set<std::string> movementCommands{
+        "MOVEFORWARD", "MOVEBACKWARD", "STRAFELEFT", "STRAFERIGHT"};
+    for (const auto& cmd : movementCommands) sink.setVirtualCommand(cmd, "touch", true);
+    controls.applyMovement(-1.0f, -1.0f);
+    controls.applyMovement(0.0f, 0.0f);
+    assert(active == movementCommands && !controls.steering_);
+    controls.applyMovement(1.0f, 1.0f);
+    controls.releaseKeys();
+    assert(active == movementCommands && !controls.steering_);
+    for (const auto& cmd : movementCommands) {
+        assert(sink.sources[cmd] == std::set<std::string>{"touch"});
+        sink.setVirtualCommand(cmd, "touch", false);
+    }
+    assert(input.virtualKeyWrites == keyWrites && input.activeKeys == externalKeys);
+    input.setVirtualKey(keyboardW, false);
+    input.setVirtualKey(keyboardShift, false);
 
     // Back must enter pointer mode BEFORE A/X routing in this same frame.
     // Neither a client command nor a Lua script may escape pointer ownership.
@@ -330,7 +393,7 @@ int main() {
                         "-Werror", str(source), "-o", str(exe)], check=True)
         subprocess.run([str(exe)], check=True)
     if not harness_transform:
-        print("PASS: pad routing, same-frame pointer/capture, sources/reset, Lua release, lookup fallback")
+        print("PASS: command-only movement/hysteresis, pad routing, pointer/capture, sources/reset, Lua release, lookup fallback")
 
 
 if __name__ == "__main__":

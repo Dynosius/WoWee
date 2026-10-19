@@ -49,25 +49,8 @@ void GamepadControls::setLookDegreesPerSecond(float degrees) {
     lookDegreesPerSecond_ = std::clamp(degrees, 30.0f, 720.0f);
 }
 
-void GamepadControls::holdKey(SDL_Scancode key, bool held, std::uint8_t source) {
-    if (key <= SDL_SCANCODE_UNKNOWN || key >= SDL_SCANCODE_COUNT) return;
-    const auto i = static_cast<std::size_t>(key);
-    // A key this is not holding is left alone. Two things can drive the same
-    // virtual key - a phone's on-screen stick is the other - and whichever of
-    // them is idle must not switch the other one off. The same goes for the
-    // stick and the buttons here, which can both want W.
-    if (!held && (heldKeys_[i] & source) == 0) return;
-    heldKeys_[i] = held ? static_cast<std::uint8_t>(heldKeys_[i] | source)
-                        : static_cast<std::uint8_t>(heldKeys_[i] & ~source);
-    core::Input::getInstance().setVirtualKey(key, heldKeys_[i] != 0);
-}
-
 void GamepadControls::releaseKeys() {
-    for (std::size_t i = 0; i < heldKeys_.size(); ++i) {
-        if (heldKeys_[i] == 0) continue;
-        heldKeys_[i] = 0;
-        core::Input::getInstance().setVirtualKey(static_cast<SDL_Scancode>(i), false);
-    }
+    stickMovement_ = {};
     auto& bindings = KeybindingManager::getInstance();
     for (const char* command : {"MOVEFORWARD", "MOVEBACKWARD", "STRAFELEFT", "STRAFERIGHT"})
         bindings.setVirtualCommand(command, "pad-stick", false);
@@ -100,22 +83,12 @@ void GamepadControls::reset() {
 
 void GamepadControls::applyMovement(float x, float y) {
     // SDL's Y is positive downwards, and pushing the stick up means forward.
-    const auto stickHolds = [this](SDL_Scancode key) {
-        return (heldKeys_[static_cast<std::size_t>(key)] & kFromStick) != 0;
-    };
-    const bool forward = pushed(-y, kWalkThreshold, stickHolds(SDL_SCANCODE_W));
-    const bool back = pushed(y, kWalkThreshold, stickHolds(SDL_SCANCODE_S));
-    // Q and E rather than A and D, as the on-screen stick does it: with no
-    // right mouse button held this client turns the character on A and D and
-    // strafes on Q and E, and a stick pushed sideways should sidestep rather
-    // than swing the view - the right stick is what swings the view.
-    const bool left = pushed(-x, kStrafeThreshold, stickHolds(SDL_SCANCODE_Q));
-    const bool right = pushed(x, kStrafeThreshold, stickHolds(SDL_SCANCODE_E));
-
-    holdKey(SDL_SCANCODE_W, forward, kFromStick);
-    holdKey(SDL_SCANCODE_S, back, kFromStick);
-    holdKey(SDL_SCANCODE_Q, left, kFromStick);
-    holdKey(SDL_SCANCODE_E, right, kFromStick);
+    const bool forward = pushed(-y, kWalkThreshold, stickMovement_.forward);
+    const bool back = pushed(y, kWalkThreshold, stickMovement_.back);
+    // Sideways means strafe; the right stick turns the view.
+    const bool left = pushed(-x, kStrafeThreshold, stickMovement_.left);
+    const bool right = pushed(x, kStrafeThreshold, stickMovement_.right);
+    stickMovement_ = {forward, back, left, right};
     auto& bindings = KeybindingManager::getInstance();
     bindings.setVirtualCommand("MOVEFORWARD", "pad-stick", forward);
     bindings.setVirtualCommand("MOVEBACKWARD", "pad-stick", back);
@@ -161,7 +134,7 @@ void GamepadControls::applyZoom(float in, float out, float deltaTime) {
 void GamepadControls::holdMouseButton(int button, bool held) {
     if (button < 0 || button >= static_cast<int>(heldMouseButtons_.size())) return;
     const auto i = static_cast<std::size_t>(button);
-    // As with the keys: a button this is not holding is left alone, so a real
+    // A button this is not holding is left alone, so a real
     // mouse and the pad cannot switch each other off.
     if (!held && !heldMouseButtons_[i]) return;
     if (held == heldMouseButtons_[i]) return;

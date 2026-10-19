@@ -185,44 +185,6 @@ const char* padKeyName(SDL_GamepadButton button) {
     }
 }
 
-SDL_Scancode padClientKeyFor(const std::string& command) {
-    // The poll sites' own keys: movement and jumping in the camera controller,
-    // the action bar, Tab and Print Screen in GameScreen. The order of the
-    // action buttons is the bar's slot order.
-    static constexpr struct {
-        const char* command;
-        SDL_Scancode key;
-    } kPolled[] = {
-        {"MOVEFORWARD",        SDL_SCANCODE_W},
-        {"MOVEBACKWARD",       SDL_SCANCODE_S},
-        {"TURNLEFT",           SDL_SCANCODE_A},
-        {"TURNRIGHT",          SDL_SCANCODE_D},
-        {"STRAFELEFT",         SDL_SCANCODE_Q},
-        {"STRAFERIGHT",        SDL_SCANCODE_E},
-        {"JUMP",               SDL_SCANCODE_SPACE},
-        {"SITORSTAND",         SDL_SCANCODE_X},
-        {"TOGGLEAUTORUN",      SDL_SCANCODE_NUMLOCKCLEAR},
-        {"TARGETNEARESTENEMY", SDL_SCANCODE_TAB},
-        {"SCREENSHOT",         SDL_SCANCODE_PRINTSCREEN},
-        {"ACTIONBUTTON1",      SDL_SCANCODE_1},
-        {"ACTIONBUTTON2",      SDL_SCANCODE_2},
-        {"ACTIONBUTTON3",      SDL_SCANCODE_3},
-        {"ACTIONBUTTON4",      SDL_SCANCODE_4},
-        {"ACTIONBUTTON5",      SDL_SCANCODE_5},
-        {"ACTIONBUTTON6",      SDL_SCANCODE_6},
-        {"ACTIONBUTTON7",      SDL_SCANCODE_7},
-        {"ACTIONBUTTON8",      SDL_SCANCODE_8},
-        {"ACTIONBUTTON9",      SDL_SCANCODE_9},
-        {"ACTIONBUTTON10",     SDL_SCANCODE_0},
-        {"ACTIONBUTTON11",     SDL_SCANCODE_MINUS},
-        {"ACTIONBUTTON12",     SDL_SCANCODE_EQUALS},
-    };
-    for (const auto& polled : kPolled) {
-        if (command == polled.command) return polled.key;
-    }
-    return SDL_SCANCODE_UNKNOWN;
-}
-
 namespace {
 
 // The buttons only some pads carry, offered to the pads that have them.
