@@ -109,7 +109,7 @@ private:
     Bindings bindings_;
     bool legacySettingsMigrated_ = false;
     std::array<bool, ImGuiKey_NamedKey_COUNT> down_{};
-    std::set<std::string> pressedKeys_; // qualified names at the physical down edge
+    std::set<std::string> pressedKeys_; // names resolved at the physical down edge, with unbound-chord fallback
     bool nativeInput_ = false;
     bool inputFocused_ = true;
     std::map<std::string, bool> virtualKeys_;

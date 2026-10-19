@@ -39,6 +39,31 @@ int main() {
     key(SDL_SCANCODE_KP_ENTER, false);
     pump();
     assert(!manager.isCommandPressed("OPENCHAT")); // Rebinding has no hardcoded fallback.
+    // Unassigned modifier chords retain the bare-key action, even if every
+    // modifier/key is released before the snapshot is sampled.
+    for (const auto mods : {SDL_KMOD_SHIFT, SDL_KMOD_CTRL, SDL_KMOD_ALT,
+                           SDL_KMOD_CTRL | SDL_KMOD_SHIFT, SDL_KMOD_ALT | SDL_KMOD_CTRL | SDL_KMOD_SHIFT}) {
+        for (const auto [scan, command] : {
+                 std::pair{SDL_SCANCODE_SPACE, "JUMP"}, {SDL_SCANCODE_TAB, "TARGETNEARESTENEMY"},
+                 {SDL_SCANCODE_ESCAPE, "TOGGLEGAMEMENU"}, {SDL_SCANCODE_Z, "TOGGLESHEATH"},
+                 {SDL_SCANCODE_NUMLOCKCLEAR, "TOGGLEAUTORUN"}, {SDL_SCANCODE_C, "TOGGLECHARACTER0"},
+                 {SDL_SCANCODE_Y, "TOGGLEACHIEVEMENT"}, {SDL_SCANCODE_M, "TOGGLEWORLDMAP"}}) {
+            manager.beginInputFrame();
+            if (mods & SDL_KMOD_SHIFT) key(SDL_SCANCODE_LSHIFT, true, mods);
+            if (mods & SDL_KMOD_CTRL) key(SDL_SCANCODE_LCTRL, true, mods);
+            if (mods & SDL_KMOD_ALT) key(SDL_SCANCODE_LALT, true, mods);
+            key(scan, true, mods);
+            key(scan, false, mods);
+            key(SDL_SCANCODE_LSHIFT, false);
+            key(SDL_SCANCODE_LCTRL, false);
+            key(SDL_SCANCODE_LALT, false);
+            pump();
+            manager.updateInput();
+            assert(manager.isCommandPressed(command));
+            manager.beginInputFrame();
+            assert(!manager.isCommandPressed(command));
+        }
+    }
     manager.bindings().clear();
     manager.bindings()["PLAIN"] = {"C", "K"};
     manager.bindings()["CHORD"] = {"SHIFT-C", "SHIFT-K"};

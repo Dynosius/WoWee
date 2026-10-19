@@ -313,8 +313,12 @@ void KeybindingManager::processInputEvent(const SDL_Event& event) {
     down_[key - ImGuiKey_NamedKey_BEGIN] = down;
     // Repeats and modifier-only changes never manufacture another action-key edge.
     // Keep the chord even if its modifiers or key are released later in this pump.
-    if (down && !repeat && !interfaceTakingTypedInput() && !ImGui::GetIO().WantTextInput)
-        pressedKeys_.insert(modifiedKey(keyName(key), shift, ctrl, alt));
+    if (down && !repeat && !interfaceTakingTypedInput() && !ImGui::GetIO().WantTextInput) {
+        const auto base = keyName(key);
+        const auto chord = modifiedKey(base, shift, ctrl, alt);
+        // Resolve fallback at the edge, before modifiers can change in this pump.
+        pressedKeys_.insert(commandForKey(chord).empty() ? base : chord);
+    }
 }
 void KeybindingManager::updateInput() {
     nativeInput_ = true;
