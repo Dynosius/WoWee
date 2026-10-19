@@ -10,10 +10,6 @@ int main() {
     assert(SDL_Init(SDL_INIT_EVENTS));
     ImGui::CreateContext();
     auto manager = wowee::ui::KeybindingManager::getInstance();
-    manager.bindings().clear();
-    manager.bindings()["PLAIN"] = {"C", "K"};
-    manager.bindings()["CHORD"] = {"SHIFT-C", "SHIFT-K"};
-    manager.bindings()["EXACT"] = {"CTRL-SHIFT-K", ""};
     const auto key = [&](SDL_Scancode scan, bool down, SDL_Keymod mods = SDL_KMOD_NONE, bool repeat = false) {
         SDL_Event event{};
         event.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
@@ -26,6 +22,27 @@ int main() {
         SDL_Event event;
         while (SDL_PollEvent(&event)) manager.processInputEvent(event);
     };
+    // Both Enter keys open chat, but a focused edit box can consume either.
+    for (const auto scan : {SDL_SCANCODE_RETURN, SDL_SCANCODE_KP_ENTER}) {
+        manager.beginInputFrame();
+        key(scan, true);
+        key(scan, false);
+        pump();
+        assert(manager.isCommandPressed("OPENCHAT"));
+        wowee::ui::noteInterfaceConsumedKey(scan == SDL_SCANCODE_RETURN ? ImGuiKey_Enter : ImGuiKey_KeypadEnter);
+        assert(!manager.isCommandPressed("OPENCHAT"));
+        wowee::ui::clearInterfaceConsumedKeys();
+    }
+    manager.setKeyForAction(wowee::ui::KeybindingManager::Action::TOGGLE_CHAT, ImGuiKey_F8);
+    manager.beginInputFrame();
+    key(SDL_SCANCODE_KP_ENTER, true);
+    key(SDL_SCANCODE_KP_ENTER, false);
+    pump();
+    assert(!manager.isCommandPressed("OPENCHAT")); // Rebinding has no hardcoded fallback.
+    manager.bindings().clear();
+    manager.bindings()["PLAIN"] = {"C", "K"};
+    manager.bindings()["CHORD"] = {"SHIFT-C", "SHIFT-K"};
+    manager.bindings()["EXACT"] = {"CTRL-SHIFT-K", ""};
     manager.bindings()["RIGHT"] = {"BUTTON2", ""};
     manager.bindings()["MIDDLE"] = {"BUTTON3", ""};
     const auto mouse = [&](Uint8 button, bool down) {

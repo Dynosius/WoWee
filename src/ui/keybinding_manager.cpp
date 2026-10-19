@@ -28,7 +28,7 @@ constexpr ActionBinding actions[] = {
     {"TOGGLEQUESTLOG", "toggle_quests", "Quests", "L"},
     {"TOGGLEMINIMAP", "toggle_minimap", "Minimap", ""},
     {"TOGGLEGAMEMENU", "toggle_settings", "Settings", "ESCAPE"},
-    {"OPENCHAT", "toggle_chat", "Chat", "ENTER"},
+    {"OPENCHAT", "toggle_chat", "Chat", "ENTER", "NUMPADENTER"},
     {"TOGGLESOCIAL", "toggle_guild_roster", "Social", "O"},
     {"TOGGLELFGPARENT", "toggle_dungeon_finder", "Dungeon Finder", "J"},
     {"TOGGLEWORLDMAP", "toggle_world_map", "World Map", "M"},
