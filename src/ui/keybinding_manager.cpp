@@ -18,7 +18,7 @@
 namespace wowee::ui {
 namespace {
 constexpr const char* legacySettingsMarker = "# wowee-native-settings-merged-v1";
-struct ActionBinding { const char* command; const char* legacy; const char* label; const char* key; };
+struct ActionBinding { const char* command; const char* legacy; const char* label; const char* key; const char* secondKey = ""; };
 constexpr ActionBinding actions[] = {
     {"TOGGLECHARACTER0", "toggle_character_screen", "Character Screen", "C"},
     {"OPENALLBAGS", "toggle_inventory", "Inventory", "I"},
@@ -36,7 +36,7 @@ constexpr ActionBinding actions[] = {
     {"TOGGLEACHIEVEMENT", "toggle_achievements", "Achievements", "Y"},
     {"TOGGLECHARACTER1", "toggle_skills", "Skills / Professions", "K"},
     {"TOGGLECHARACTER4", "toggle_pvp", "Player vs Player", "H"},
-    {"TOGGLEAUTORUN", "toggle_autorun", "Autorun", "NUMLOCK"},
+    {"TOGGLEAUTORUN", "toggle_autorun", "Autorun", "`", "NUMLOCK"},
 };
 static_assert(std::size(actions) == KeybindingManager::getActionCount());
 std::string upper(std::string s) {
@@ -55,7 +55,7 @@ const char* KeybindingManager::commandForAction(Action action) {
     return i < std::size(actions) ? actions[i].command : "";
 }
 void KeybindingManager::initializeDefaults() {
-    for (const auto& action : actions) bindings_[action.command] = {action.key, ""};
+    for (const auto& action : actions) bindings_[action.command] = {action.key, action.secondKey};
     const Bindings defaults = {
         {"MOVEFORWARD", {"W", "UP"}}, {"MOVEBACKWARD", {"S", "DOWN"}},
         {"TURNLEFT", {"A", "LEFT"}}, {"TURNRIGHT", {"D", "RIGHT"}},

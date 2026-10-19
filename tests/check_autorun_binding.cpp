@@ -1,5 +1,8 @@
 // Run from the repo root (MSYS2 UCRT64):
-// g++ -std=c++20 -Iinclude -Iextern/imgui tests/check_autorun_binding.cpp src/ui/keybinding_manager.cpp src/core/logger.cpp extern/imgui/imgui{,_draw,_tables,_widgets}.cpp -o build/check_autorun_binding.exe && build/check_autorun_binding.exe
+// g++ -std=c++20 -Iinclude -Iextern/imgui tests/check_autorun_binding.cpp src/ui/keybinding_manager.cpp src/core/logger.cpp extern/imgui/imgui{,_draw,_tables,_widgets}.cpp -lSDL3 -o build/check_autorun_binding.exe && build/check_autorun_binding.exe
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include "ui/keybinding_manager.hpp"
 #include <cassert>
 #include <chrono>
@@ -15,8 +18,8 @@ int main() {
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
     auto& manager = wowee::ui::KeybindingManager::getInstance();
     const auto action = wowee::ui::KeybindingManager::Action::TOGGLE_AUTORUN;
-    assert(manager.getKeyForAction(action) == ImGuiKey_NumLock);
-    manager.setKeyForAction(action, ImGuiKey_R);
+    assert(manager.getKeyForAction(action) == ImGuiKey_GraveAccent);
+    assert(manager.bindings().at("TOGGLEAUTORUN")[1] == "NUMLOCK");
     const auto press = [&](ImGuiKey key, bool down) {
         io.AddKeyEvent(key, down);
         ImGui::NewFrame();
@@ -24,6 +27,14 @@ int main() {
         ImGui::EndFrame();
         return pressed;
     };
+    for (const auto key : {ImGuiKey_GraveAccent, ImGuiKey_NumLock}) {
+        assert(press(key, true));
+        assert(!press(key, true));
+        assert(!press(key, false));
+    }
+    manager.setKeyForAction(action, ImGuiKey_R);
+    assert(!press(ImGuiKey_GraveAccent, true));
+    assert(!press(ImGuiKey_GraveAccent, false));
     assert(!press(ImGuiKey_NumLock, true));
     assert(!press(ImGuiKey_NumLock, false));
     assert(press(ImGuiKey_R, true));
