@@ -55,6 +55,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <sstream>
@@ -1636,16 +1637,39 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             if (bindings.isCommandPressed("SCREENSHOT")) takeScreenshot();
             if (bindings.isCommandPressed("WOWEETOGGLERECORDING")) toggleRecording();
 
-            const auto forms = game::knownShapeshiftForms(
-                gameHandler.getPlayerClass(), gameHandler.getKnownSpells());
-            for (int i = 0; i < static_cast<int>(forms.size()) && i < 8; ++i)
-                if (bindings.isCommandPressed("SHAPESHIFTBUTTON" + std::to_string(i + 1)))
-                    gameHandler.castSpell(forms[i].spellId);
+            // Cache only immutable names, as strings to avoid per-poll conversions.
+            // Bindings and the character's known forms must stay live.
+            static const std::array<std::string, 8> shapeshiftCommands = {
+                "SHAPESHIFTBUTTON1", "SHAPESHIFTBUTTON2", "SHAPESHIFTBUTTON3", "SHAPESHIFTBUTTON4",
+                "SHAPESHIFTBUTTON5", "SHAPESHIFTBUTTON6", "SHAPESHIFTBUTTON7", "SHAPESHIFTBUTTON8"};
+            std::vector<game::ShapeshiftForm> forms;
+            bool formsLoaded = false;
+            for (size_t i = 0; i < shapeshiftCommands.size(); ++i) {
+                if (!bindings.isCommandPressed(shapeshiftCommands[i])) continue;
+                // One snapshot per frame with a press, even if several forms fire.
+                if (!formsLoaded) {
+                    forms = game::knownShapeshiftForms(
+                        gameHandler.getPlayerClass(), gameHandler.getKnownSpells());
+                    formsLoaded = true;
+                }
+                if (i < forms.size()) gameHandler.castSpell(forms[i].spellId);
+            }
 
+            static const std::array<std::string, 12> actionCommands = {
+                "ACTIONBUTTON1", "ACTIONBUTTON2", "ACTIONBUTTON3", "ACTIONBUTTON4",
+                "ACTIONBUTTON5", "ACTIONBUTTON6", "ACTIONBUTTON7", "ACTIONBUTTON8",
+                "ACTIONBUTTON9", "ACTIONBUTTON10", "ACTIONBUTTON11", "ACTIONBUTTON12"};
+            static const std::array<std::string, 12> bottomCommands = {
+                "MULTIACTIONBAR1BUTTON1", "MULTIACTIONBAR1BUTTON2", "MULTIACTIONBAR1BUTTON3",
+                "MULTIACTIONBAR1BUTTON4", "MULTIACTIONBAR1BUTTON5", "MULTIACTIONBAR1BUTTON6",
+                "MULTIACTIONBAR1BUTTON7", "MULTIACTIONBAR1BUTTON8", "MULTIACTIONBAR1BUTTON9",
+                "MULTIACTIONBAR1BUTTON10", "MULTIACTIONBAR1BUTTON11", "MULTIACTIONBAR1BUTTON12"};
+            static_assert(actionCommands.size() == game::GameHandler::SLOTS_PER_BAR);
+            static_assert(bottomCommands.size() == game::GameHandler::SLOTS_PER_BAR);
             const auto& bar = gameHandler.getActionBar();
             for (int i = 0; i < game::GameHandler::SLOTS_PER_BAR; ++i) {
-                const bool main = bindings.isCommandPressed("ACTIONBUTTON" + std::to_string(i + 1));
-                const bool bottom = bindings.isCommandPressed("MULTIACTIONBAR1BUTTON" + std::to_string(i + 1));
+                const bool main = bindings.isCommandPressed(actionCommands[i]);
+                const bool bottom = bindings.isCommandPressed(bottomCommands[i]);
                 if (!main && !bottom) continue;
                 const int page = bottom ? ActionBarPanel::kBottomLeftActionPage : actionBarPanel_.getMainActionBarPage();
                 const int slot = ActionBarPanel::actionSlotForPage(page, i);
