@@ -1563,7 +1563,7 @@ void Application::run() {
                             mio.MousePos.x, mio.DisplaySize.y - mio.MousePos.y,
                             wheelClicks(event.wheel.y, event.wheel.timestamp));
                     }
-                    if (!takenByUi && addonManager_ && addonManager_->getLuaEngine() && state == AppState::IN_GAME) {
+                    if (!takenByUi) {
                         const auto mods = SDL_GetModState();
                         const bool shift = (mods & SDL_KMOD_SHIFT) != 0;
                         const bool ctrl = (mods & SDL_KMOD_CTRL) != 0;
@@ -1574,11 +1574,11 @@ void Application::run() {
                         if (command.empty()) command = bindings.commandForKey(key);
                         if (!command.empty() && event.wheel.y != 0) {
                             if (command == "CAMERAZOOMIN" || command == "CAMERAZOOMOUT") {
+                                // Only pointer capture gates world zoom, not keyboard/text focus.
                                 // Preserve fractional trackpad travel and the camera's zoom calibration.
-                                if (!ui::interfaceTakingTypedInput() && !ImGui::GetIO().WantTextInput)
-                                    renderer->getCameraController()->processMouseWheel(
-                                        std::abs(event.wheel.y) * (command == "CAMERAZOOMIN" ? 1.0f : -1.0f));
-                            } else {
+                                renderer->getCameraController()->processMouseWheel(
+                                    std::abs(event.wheel.y) * (command == "CAMERAZOOMIN" ? 1.0f : -1.0f));
+                            } else if (state == AppState::IN_GAME && addonManager_ && addonManager_->getLuaEngine()) {
                                 bindings.setVirtualKey(key, true);
                                 auto* engine = addonManager_->getLuaEngine();
                                 engine->dispatchBindingInput(key, shift, ctrl, alt, true);
