@@ -5616,7 +5616,14 @@ void Application::updateQuestMarkers() {
 
         // Get NPC entity position
         auto entity = gameHandler->getEntityManager().getEntity(guid);
-        if (!entity) continue;
+        if (!entity) {
+            static std::unordered_set<uint64_t> said;
+            if (said.insert(guid).second) {
+                LOG_WARNING("Quest marker: status ", static_cast<int>(status), " for 0x",
+                            std::hex, guid, std::dec, " but no such entity");
+            }
+            continue;
+        }
         if (entity->getType() == game::ObjectType::UNIT) {
             auto unit = std::static_pointer_cast<game::Unit>(entity);
             const std::string& name = unit->getName();
@@ -5655,6 +5662,14 @@ void Application::updateQuestMarkers() {
 
         // Set the marker (renderer will handle positioning, bob, glow, etc.)
         questMarkerRenderer->setMarker(guid, renderPos, markerType, boundingHeight, markerGrayscale);
+        {
+            static std::unordered_set<uint64_t> said;
+            if (said.insert(guid).second) {
+                LOG_INFO("Quest marker: 0x", std::hex, guid, std::dec, " type ", markerType,
+                         " at ", renderPos.x, ",", renderPos.y, ",", renderPos.z,
+                         " height ", boundingHeight);
+            }
+        }
         markersAdded++;
     }
 
