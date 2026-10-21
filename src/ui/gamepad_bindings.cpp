@@ -11,9 +11,8 @@ namespace ui {
 namespace {
 
 // The scheme. Read down the list and it is the whole of what a pad's buttons
-// do, apart from Escape - which is on B and on Start, and goes through ImGui
-// rather than through a scancode, because that is where the interface reads
-// it.
+// do. Escape keeps its keyboard slot and B gets the second menu slot; Start
+// is deliberately unassigned rather than hiding a third binding.
 //
 // On its own in this file, and not beside the code that applies it, so that a
 // test can check the table without linking the camera and ImGui behind it. It
@@ -21,6 +20,7 @@ namespace {
 // a key, is every key one the client actually polls - are questions about the
 // data alone.
 constexpr PadBinding kBindings[] = {
+    {SDL_GAMEPAD_BUTTON_EAST, SDL_SCANCODE_ESCAPE, "Close a window, or the game menu", "TOGGLEGAMEMENU"},
     {SDL_GAMEPAD_BUTTON_SOUTH,             SDL_SCANCODE_SPACE,        "Jump", "JUMP"},
     {SDL_GAMEPAD_BUTTON_WEST,             SDL_SCANCODE_1,            "Action 1", "ACTIONBUTTON1"},
     {SDL_GAMEPAD_BUTTON_NORTH,             SDL_SCANCODE_2,            "Action 2", "ACTIONBUTTON2"},
@@ -38,7 +38,7 @@ constexpr PadBinding kBindings[] = {
     // The last button every pad has and nothing was using. X sits the
     // character down, and dives while swimming - both of them things a
     // keyboard could do and a controller could not reach at all.
-    {SDL_GAMEPAD_BUTTON_RIGHT_STICK,    SDL_SCANCODE_X,            "Sit down, or dive"},
+    {SDL_GAMEPAD_BUTTON_RIGHT_STICK,    SDL_SCANCODE_X,            "Sit down, or dive", "SITORSTAND"},
 };
 
 }  // namespace
@@ -183,43 +183,6 @@ const char* padKeyName(SDL_GamepadButton button) {
         case SDL_GAMEPAD_BUTTON_LEFT_PADDLE2:       return "PADPADDLE4";
         default:                                  return "";
     }
-}
-
-SDL_Scancode padClientKeyFor(const std::string& command) {
-    // The poll sites' own keys: movement and jumping in the camera controller,
-    // the action bar, Tab and Print Screen in GameScreen. The order of the
-    // action buttons is the bar's slot order.
-    static constexpr struct {
-        const char* command;
-        SDL_Scancode key;
-    } kPolled[] = {
-        {"MOVEFORWARD",        SDL_SCANCODE_W},
-        {"MOVEBACKWARD",       SDL_SCANCODE_S},
-        {"TURNLEFT",           SDL_SCANCODE_A},
-        {"TURNRIGHT",          SDL_SCANCODE_D},
-        {"STRAFELEFT",         SDL_SCANCODE_Q},
-        {"STRAFERIGHT",        SDL_SCANCODE_E},
-        {"JUMP",               SDL_SCANCODE_SPACE},
-        {"TOGGLEAUTORUN",      SDL_SCANCODE_NUMLOCKCLEAR},
-        {"TARGETNEARESTENEMY", SDL_SCANCODE_TAB},
-        {"SCREENSHOT",         SDL_SCANCODE_PRINTSCREEN},
-        {"ACTIONBUTTON1",      SDL_SCANCODE_1},
-        {"ACTIONBUTTON2",      SDL_SCANCODE_2},
-        {"ACTIONBUTTON3",      SDL_SCANCODE_3},
-        {"ACTIONBUTTON4",      SDL_SCANCODE_4},
-        {"ACTIONBUTTON5",      SDL_SCANCODE_5},
-        {"ACTIONBUTTON6",      SDL_SCANCODE_6},
-        {"ACTIONBUTTON7",      SDL_SCANCODE_7},
-        {"ACTIONBUTTON8",      SDL_SCANCODE_8},
-        {"ACTIONBUTTON9",      SDL_SCANCODE_9},
-        {"ACTIONBUTTON10",     SDL_SCANCODE_0},
-        {"ACTIONBUTTON11",     SDL_SCANCODE_MINUS},
-        {"ACTIONBUTTON12",     SDL_SCANCODE_EQUALS},
-    };
-    for (const auto& polled : kPolled) {
-        if (command == polled.command) return polled.key;
-    }
-    return SDL_SCANCODE_UNKNOWN;
 }
 
 namespace {

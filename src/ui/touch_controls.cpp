@@ -1,6 +1,7 @@
 #include "ui/touch_controls.hpp"
 
-#include "core/input.hpp"
+#include "ui/keybinding_manager.hpp"
+#include "ui/framexml_takeover.hpp"
 #include "core/logger.hpp"
 #include "rendering/camera_controller.hpp"
 
@@ -42,18 +43,18 @@ void TouchControls::setInWorld(bool inWorld) {
 }
 
 void TouchControls::setMovementKeys(bool forward, bool back, bool left, bool right) const {
-    auto& input = core::Input::getInstance();
-    input.setVirtualKey(SDL_SCANCODE_W, forward);
-    input.setVirtualKey(SDL_SCANCODE_S, back);
-    // Q and E rather than A and D. With the right button up - which it always
-    // is on a phone - this client turns the character on A and D and strafes on
-    // Q and E. Turning meant the stick swung the view as well as the feet,
-    // which is not what a stick pushed sideways should do.
-    input.setVirtualKey(SDL_SCANCODE_Q, left);
-    input.setVirtualKey(SDL_SCANCODE_E, right);
+    auto& bindings = KeybindingManager::getInstance();
+    bindings.setVirtualCommand("MOVEFORWARD", "touch", forward);
+    bindings.setVirtualCommand("MOVEBACKWARD", "touch", back);
+    bindings.setVirtualCommand("STRAFELEFT", "touch", left);
+    bindings.setVirtualCommand("STRAFERIGHT", "touch", right);
 }
 
 void TouchControls::handleEvent(const SDL_Event& event, int windowWidth, int windowHeight) {
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WILL_ENTER_BACKGROUND) {
+        reset();
+        return;
+    }
     if (!inWorld_) return;
     if (event.type != SDL_EVENT_FINGER_DOWN && event.type != SDL_EVENT_FINGER_MOTION &&
         event.type != SDL_EVENT_FINGER_UP) {
@@ -67,6 +68,8 @@ void TouchControls::handleEvent(const SDL_Event& event, int windowWidth, int win
     const SDL_FingerID id = event.tfinger.fingerID;
 
     if (event.type == SDL_EVENT_FINGER_DOWN) {
+        if (ImGui::GetIO().WantCaptureMouse || frameXmlOwnsMouse() ||
+            ImGui::GetIO().WantTextInput || interfaceTakingTypedInput()) return;
         // The interface is asked first, so a bag or an action button drawn over
         // the corner still gets the press. A stick that ate those would be
         // maddening, and the corner is only a default.
@@ -148,19 +151,16 @@ void TouchControls::handleEvent(const SDL_Event& event, int windowWidth, int win
     if (std::abs(moved) < kPinchPixelsPerNotch) return;
     lastPinchSpacing_ = spacing;
 
-    // Fingers spreading pulls the camera in, the way a wheel forward does. Sent
-    // as a wheel event so it goes through the same clamping and the same
-    // setting as a wheel, rather than reaching into the camera here.
-    SDL_Event wheel{};
-    wheel.type = SDL_EVENT_MOUSE_WHEEL;
-    wheel.wheel.timestamp = SDL_GetTicks();
-    // One float axis in SDL3: the integer y and the precise one were the
-    // same measurement at two precisions, and only the finer one survived.
-    wheel.wheel.y = moved / kPinchPixelsPerNotch;
-    SDL_PushEvent(&wheel);
+    // An analog camera feed, like pad triggers: rebinding the mouse wheel must
+    // not rebind a pinch. Keep the camera's existing calibration and clamping.
+    if (camera_) camera_->processMouseWheel(moved / kPinchPixelsPerNotch);
 }
 
 void TouchControls::update() {
+    if (ImGui::GetIO().WantTextInput || interfaceTakingTypedInput()) {
+        reset();
+        return;
+    }
     if (!inWorld_ || stickFingerId_ == kNoFinger) {
         wasForward_ = wasBack_ = wasLeft_ = wasRight_ = false;
         setMovementKeys(false, false, false, false);
@@ -202,8 +202,8 @@ void TouchControls::reset() {
     pinching_ = false;
     stickX_ = stickY_ = 0.0f;
     wasForward_ = wasBack_ = wasLeft_ = wasRight_ = false;
-    // Everything the stick could be holding, not just the four it uses now.
-    core::Input::getInstance().clearVirtualKeys();
+    // Release only this adapter's contribution; pad/keyboard may still hold it.
+    setMovementKeys(false, false, false, false);
 }
 
 }  // namespace ui

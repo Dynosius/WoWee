@@ -1871,9 +1871,6 @@ void GameScreen::saveSettings() {
 
     out.close();
 
-    // Save keybindings to the same config file (appends [Keybindings] section)
-    KeybindingManager::getInstance().saveToConfigFile(path);
-
     LOG_INFO("Settings saved to ", path);
 }
 
@@ -2169,9 +2166,6 @@ void GameScreen::loadSettings() {
                 SettingsPanel::recommendedPixelScale(defaultHeight, 0.5f, 2.0f);
         }
     }
-
-    // Load keybindings from the same config file
-    KeybindingManager::getInstance().loadFromConfigFile(path);
 
     // Apply immediately if services are already wired. The constructor loads
     // settings before renderer injection, so setServices() applies them again.

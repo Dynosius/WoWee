@@ -709,11 +709,9 @@ private:
     float savedBarberPivot_ = 0.0f;
     bool ignoreSlopeLimit_ = false;
     float maxDistanceFactor_ = 1.0f;
-    bool xKeyWasDown = false;
-    bool rKeyWasDown = false;
+    bool walking_ = false; // Persistent TOGGLERUN state; held Ctrl is a temporary override.
     bool runPace = false;
     bool autoRunning = false;
-    bool tildeWasDown = false;
 
     // Auto-follow target position (WoW /follow). Non-null when following.
     const glm::vec3* autoFollowTarget_ = nullptr;

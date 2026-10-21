@@ -2,9 +2,14 @@
 
 #include <imgui.h>
 #include <string>
-#include <unordered_map>
-#include <memory>
+#include <map>
+#include <array>
+#include <set>
+#include <cstdint>
 #include <functional>
+#include <utility>
+
+union SDL_Event;
 
 namespace wowee::ui {
 
@@ -31,48 +36,65 @@ public:
         TOGGLE_ACHIEVEMENTS,
         TOGGLE_SKILLS,
         TOGGLE_PVP,
+        TOGGLE_AUTORUN,
         ACTION_COUNT
     };
 
     static KeybindingManager& getInstance();
 
+    // Addon queries retain their keyboard/mouse meaning, regardless of editor view.
+    enum class Device { KeyboardMouse, Controller };
+    using Bindings = std::map<std::string, std::array<std::string, 2>>;
+    Bindings& bindings() { return bindings_; }
+    const Bindings& bindings() const { return bindings_; }
+    Bindings& controllerBindings() { return controllerBindings_; }
+    const Bindings& controllerBindings() const { return controllerBindings_; }
+    Bindings& bindings(Device device) { return device == Device::Controller ? controllerBindings_ : bindings_; }
+    const Bindings& bindings(Device device) const { return device == Device::Controller ? controllerBindings_ : bindings_; }
+    static Device deviceForKey(const std::string& key);
+    static bool isControllerKey(const std::string& key) { return deviceForKey(key) == Device::Controller; }
+    bool setBinding(const std::string& key, const std::string& command = "");
+    bool loadBindings(const std::string& path);
+    bool loadBindingsWithLegacy(const std::string& path, const std::string& legacyPath);
+    bool saveBindings(const std::string& path) const;
+    // Exact lookup for editing; runtime resolution prefers the chord, then its base.
+    std::string commandForKey(const std::string& key) const;
+    std::string resolveBindingKey(const std::string& key) const;
+    std::string resolveCommand(const std::string& key) const;
+    bool isCommandPressed(const std::string& command, bool repeat = false) const;
+    bool isCommandDown(const std::string& command) const;
+    static const char* commandForAction(Action action);
+    static std::string keyName(ImGuiKey key);
+    static ImGuiKey keyFromName(const std::string& name);
+    static std::string keyNameFromSDL(uint32_t key);
+    static std::string mouseButtonNameFromSDL(uint8_t button);
+    static std::string modifiedKey(std::string key, bool shift, bool ctrl, bool alt);
+
+    // Collect press edges during the pump; sample held state before gameplay.
+    void beginInputFrame();
+    void processInputEvent(const SDL_Event& event);
+    void updateInput();
+    // Source identifies the physical producer; release the command chosen at down.
+    void setVirtualCommand(const std::string& command, const std::string& source, bool down);
+
     /**
      * Check if an action's keybinding was just pressed.
-     * Uses ImGui::IsKeyPressed() internally with the bound key.
+     * Uses queue-time edges (or ImGui for standalone interface consumers).
      */
     bool isActionPressed(Action action, bool repeat = false);
 
 
     /**
-     * Get the currently bound key for an action.
-     */
-    [[nodiscard]] ImGuiKey getKeyForAction(Action action) const;
-    [[nodiscard]] ImGuiKey getDefaultKeyForAction(Action action) const;
-
-    /**
-     * Rebind an action to a different key.
-     */
-    void setKeyForAction(Action action, ImGuiKey key);
-
-    /**
      * Reset all keybindings to defaults.
      */
     void resetToDefaults();
+    void resetToDefaults(Device device);
+    void resetToDefaults(bool controller) { resetToDefaults(controller ? Device::Controller : Device::KeyboardMouse); }
 
     /**
      * Load keybindings from config file.
      */
-    void loadFromConfigFile(const std::string& filePath);
-
-    /**
-     * Save keybindings to config file.
-     */
-    void saveToConfigFile(const std::string& filePath) const;
-
-    /**
-     * Get human-readable name for an action.
-     */
-    static const char* getActionName(Action action);
+    bool loadFromConfigFile(const std::string& filePath);
 
     /**
      * Get all actions for iteration.
@@ -82,9 +104,20 @@ public:
 private:
     KeybindingManager();
 
-    std::unordered_map<int, ImGuiKey> bindings_;  // action -> key
-
-    void initializeDefaults();
+    Bindings bindings_;
+    Bindings controllerBindings_;
+    std::set<std::string> migratedPaths_;
+    std::array<bool, ImGuiKey_NamedKey_COUNT> down_{};
+    // Base physical key -> command, latched at down, unaffected by later edits/modifiers.
+    std::map<std::string, std::string> heldBindings_;
+    std::set<std::pair<std::string, std::string>> pressedBindings_;
+    bool nativeInput_ = false;
+    bool inputFocused_ = true;
+    std::map<std::string, std::set<std::string>> virtualCommands_;
+    std::set<std::string> virtualCommandPressed_;
+    std::pair<std::string, std::string> resolve(const std::string& key, bool fallback) const;
+    bool keyActive(const std::string& key, bool pressed, bool repeat = false) const;
+    void initializeDefaults(Device device);
 };
 
 /**

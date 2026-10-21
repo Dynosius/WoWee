@@ -17,6 +17,92 @@
 namespace wowee {
 namespace addons {
 
+// The stock binding editor is load-on-demand. Only its functions/scripts get
+// this environment: addon/profile APIs never change meaning with the selector.
+inline constexpr const char* kBindingDeviceEditor = R"LUA(
+if not KeyBindingFrame or not KeyBindingFrame_OnKeyDown or KeyBindingFrame.woweeDevices then return end
+local frame = KeyBindingFrame
+frame.woweeDevices = true
+local controller = false
+local env = setmetatable({}, {__index = _G})
+env.GetBinding = function(...) return (controller and WoweeGetControllerBinding or GetBinding)(...) end
+env.GetBindingKey = function(...) return (controller and WoweeGetControllerBindingKey or GetBindingKey)(...) end
+env.LoadBindings = function(which)
+    if which == 0 then
+        (controller and WoweeResetControllerBindings or WoweeResetKeyboardBindings)()
+        frame.bindingsChanged = 1
+    elseif not LoadBindings(which) then
+        error("Cannot reload bindings; current edits retained")
+    end
+end
+env.SaveBindings = function(which)
+    if not SaveBindings(which) then error("Cannot save bindings; current edits retained") end
+end
+setmetatable(env, {__index = _G, __newindex = _G})
+for name, fn in pairs(_G) do
+    if type(fn) == 'function' and (name:match('^KeyBindingFrame_') or name:match('^KeyBindingButton_')) then
+        setfenv(fn, env)
+    end
+end
+local function scope(widget)
+    for _, script in ipairs({'OnClick', 'OnKeyDown', 'OnKeyUp', 'OnShow', 'OnHide', 'OnMouseWheel', 'OnVerticalScroll'}) do
+        local fn = widget:GetScript(script)
+        if type(fn) == 'function' then setfenv(fn, env) end
+    end
+    for _, child in ipairs({widget:GetChildren()}) do scope(child) end
+end
+scope(frame)
+local original = KeyBindingFrame_OnKeyDown
+local function capture(self, key)
+    if not frame.selected then return original(self, key) end
+    local pad = key:match('^PAD') or key:match('%-PAD')
+    if (not not pad) ~= controller then
+        if key == 'ESCAPE' then KeyBindingFrame_SetSelected(nil); KeyBindingFrame_Update() end
+        return
+    end
+    if key == 'UNKNOWN' or key:match('^[LR]SHIFT$') or key:match('^[LR]CTRL$') or key:match('^[LR]ALT$') then return end
+    local mouse = ({LeftButton='BUTTON1', RightButton='BUTTON2', MiddleButton='BUTTON3'})[key]
+    key = mouse or key:gsub('^Button(%d+)$', 'BUTTON%1')
+    if key == 'BUTTON1' or key == 'BUTTON2' then return end
+    if not pad then
+        local shift, ctrl, alt = __WoweeBindingCaptureModifiers()
+        if shift then key = 'SHIFT-'..key end
+        if ctrl then key = 'CTRL-'..key end
+        if alt then key = 'ALT-'..key end
+    end
+    if not WoweeSetBindingSlot(frame.selected, frame.keyID, key, controller) then
+        KeyBindingFrameOutputText:SetText('Invalid binding'); return
+    end
+    KeyBindingFrameOutputText:SetText(KEY_BOUND)
+    KeyBindingFrame_SetSelected(nil)
+    if frame.buttonPressed then frame.buttonPressed:UnlockHighlight() end
+    frame.bindingsChanged = 1
+    KeyBindingFrame_Update()
+end
+KeyBindingFrame_OnKeyDown = capture
+frame:SetScript('OnKeyDown', capture)
+frame:SetScript('OnClick', capture)
+KeyBindingFrameUnbindButton:SetScript('OnClick', function()
+    if frame.selected and WoweeSetBindingSlot(frame.selected, frame.keyID, nil, controller) then
+        KeyBindingFrame_SetSelected(nil)
+        frame.bindingsChanged = 1
+        KeyBindingFrameOutputText:SetText('')
+        KeyBindingFrame_Update()
+    end
+end)
+local selector = CreateFrame('Button', 'WoweeBindingDeviceSelector', frame, 'UIPanelButtonTemplate')
+selector:SetSize(155, 22)
+selector:SetPoint('TOPLEFT', frame, 'TOPLEFT', 22, -28)
+selector:SetText('Keyboard / mouse')
+selector:SetScript('OnClick', function()
+    controller = not controller
+    selector:SetText(controller and 'Controller' or 'Keyboard / mouse')
+    KeyBindingFrame_SetSelected(nil)
+    KeyBindingFrameOutputText:SetText('')
+    KeyBindingFrame_Update()
+end)
+)LUA";
+
 /// The client's own settings, as panels in FrameXML's Interface Options.
 ///
 /// Built from WoweeSettingList() rather than written out, so a setting added to

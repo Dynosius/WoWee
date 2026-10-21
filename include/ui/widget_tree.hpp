@@ -961,6 +961,14 @@ public:
     /// same omission and new ones would arrive with the same bug.
     void hideOrphanedTooltips();
     [[nodiscard]] const std::vector<uint32_t>& scrollFrames() const { return scrollFrames_; }
+    /// EnableKeyboard, recorded here as well as on the widget. The focus probe
+    /// every binding poll consults asks for the topmost keyboard frame, and
+    /// scanning the whole tree for it - tens of thousands of widgets once
+    /// FrameXML is loaded, dozens of times a frame - is far too slow.
+    /// Ascending ids, so a walk visits them in the same order a full scan did.
+    /// An id stays listed after EnableKeyboard(false); readers check the flag.
+    void setKeyboardEnabled(uint32_t id, bool enabled);
+    [[nodiscard]] const std::vector<uint32_t>& keyboardFrames() const { return keyboardFrames_; }
     [[nodiscard]] const std::vector<uint32_t>& playerPortraits() const { return portraitsFor("player"); }
 
     /// The widget published under this name, or null. Names are unique in
@@ -1066,6 +1074,8 @@ private:
     float uiScale_ = 1.0f;
     float userScale_ = 1.0f;
     std::vector<uint32_t> scrollFrames_;
+    /// Ids that ever called EnableKeyboard(true), ascending. See keyboardFrames.
+    std::vector<uint32_t> keyboardFrames_;
     /// Which unit each portrait texture is showing, and the reverse. Two maps
     /// rather than one because both questions are asked every frame: the draw
     /// loop wants every texture for a unit, and a claim wants the unit a

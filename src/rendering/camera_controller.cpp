@@ -2801,23 +2801,31 @@ void CameraController::update(float deltaTime) {
     }
     bool movementSuppressed = movementSuppressTimer_ > 0.0f;
 
+    auto& bindings = ui::KeybindingManager::getInstance();
+    if (bindings.isCommandPressed("TOGGLERUN")) walking_ = !walking_;
+    if (bindings.isCommandPressed("CAMERAZOOMIN")) processMouseWheel(1.0f);
+    if (bindings.isCommandPressed("CAMERAZOOMOUT")) processMouseWheel(-1.0f);
+    if (bindings.isCommandPressed("WOWEERESETCAMERA")) resetAngles();
+
     // Determine current key states
     // Arrow keys mirror WASD the way the original client maps them:
     // Up/Down move, Left/Right turn (strafe stays on Q/E).
-    bool keyW = !uiWantsKeyboard && !sitting && !movementSuppressed && (input.isKeyPressed(SDL_SCANCODE_W) || input.isKeyPressed(SDL_SCANCODE_UP));
-    bool keyS = !uiWantsKeyboard && !sitting && !movementSuppressed && (input.isKeyPressed(SDL_SCANCODE_S) || input.isKeyPressed(SDL_SCANCODE_DOWN));
-    bool keyA = !uiWantsKeyboard && !sitting && !movementSuppressed && (input.isKeyPressed(SDL_SCANCODE_A) || input.isKeyPressed(SDL_SCANCODE_LEFT));
-    bool keyD = !uiWantsKeyboard && !sitting && !movementSuppressed && (input.isKeyPressed(SDL_SCANCODE_D) || input.isKeyPressed(SDL_SCANCODE_RIGHT));
-    bool keyQ = !uiWantsKeyboard && !sitting && !movementSuppressed && input.isKeyPressed(SDL_SCANCODE_Q);
-    bool keyE = !uiWantsKeyboard && !sitting && !movementSuppressed && input.isKeyPressed(SDL_SCANCODE_E);
+    bool keyW = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandDown("MOVEFORWARD");
+    bool keyS = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandDown("MOVEBACKWARD");
+    bool keyA = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandDown("TURNLEFT");
+    bool keyD = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandDown("TURNRIGHT");
+    bool keyQ = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandDown("STRAFELEFT");
+    bool keyE = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandDown("STRAFERIGHT");
     bool shiftDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LSHIFT) || input.isKeyPressed(SDL_SCANCODE_RSHIFT));
     bool ctrlDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_LCTRL) || input.isKeyPressed(SDL_SCANCODE_RCTRL));
-    bool nowJump = !uiWantsKeyboard && !sitting && !movementSuppressed && input.isKeyJustPressed(SDL_SCANCODE_SPACE);
+    // Ctrl temporarily forces walking without changing the bindable toggle.
+    const bool walking = walking_ || ctrlDown;
+    bool nowJump = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandPressed("JUMP");
     // Swimming and flying need the held state, not the press edge: on land
     // space is a one-shot jump, but in water and in the air it is continuous
     // ascent, and an edge gave a single impulse that then bled away - or, in
     // flight, a single frame of climb per press.
-    bool spaceHeld = !uiWantsKeyboard && !sitting && !movementSuppressed && input.isKeyPressed(SDL_SCANCODE_SPACE);
+    bool spaceHeld = !uiWantsKeyboard && !sitting && !movementSuppressed && bindings.isCommandDown("JUMP");
 
     // Idle camera: any input resets the timer; timeout triggers a slow orbit pan
     bool anyInput = leftMouseDown || rightMouseDown || keyW || keyS || keyA || keyD || keyQ || keyE || nowJump;
@@ -2864,13 +2872,11 @@ void CameraController::update(float deltaTime) {
         keyW = keyS = keyA = keyD = keyQ = keyE = nowJump = spaceHeld = false;
     }
 
-    // Tilde or NumLock toggles auto-run; any forward/backward key cancels it
-    bool tildeDown = !uiWantsKeyboard && (input.isKeyPressed(SDL_SCANCODE_GRAVE) ||
-                                           input.isKeyPressed(SDL_SCANCODE_NUMLOCKCLEAR));
-    if (tildeDown && !tildeWasDown) {
+    // The same action the keybinding panel rebinds; forward/backward cancels it.
+    if (!uiWantsKeyboard && ui::KeybindingManager::getInstance().isActionPressed(
+            ui::KeybindingManager::Action::TOGGLE_AUTORUN)) {
         autoRunning = !autoRunning;
     }
-    tildeWasDown = tildeDown;
     // Helper: cancel auto-follow and notify game handler
     auto doCancelAutoFollow = [&]() {
         if (autoFollowTarget_) {
@@ -2985,7 +2991,7 @@ void CameraController::update(float deltaTime) {
             speed = (runBackSpeedOverride_ > 0.0f && runBackSpeedOverride_ < 100.0f
                      && !std::isnan(runBackSpeedOverride_))
                         ? runBackSpeedOverride_ : WOW_BACK_SPEED;
-        } else if (ctrlDown) {
+        } else if (walking) {
             speed = (walkSpeedOverride_ > 0.0f && walkSpeedOverride_ < 100.0f && !std::isnan(walkSpeedOverride_))
                         ? walkSpeedOverride_ : WOW_WALK_SPEED;
         } else if (runSpeedOverride_ > 0.0f && runSpeedOverride_ < 100.0f && !std::isnan(runSpeedOverride_)) {
@@ -3008,7 +3014,7 @@ void CameraController::update(float deltaTime) {
     if (useWoWSpeed) {
         // "Sprinting" flag drives run animation/stronger footstep set.
         // In WoW mode this means running pace (not walk/backpedal), not Shift.
-        runPace = hasMoveInput && !ctrlDown && !nowBackward;
+        runPace = hasMoveInput && !walking && !nowBackward;
     } else {
         runPace = hasMoveInput && shiftDown;
     }
@@ -3064,24 +3070,13 @@ void CameraController::update(float deltaTime) {
                                   std::sin(moveYawRad) * std::cos(flightPitchRad),
                                   std::sin(flightPitchRad));
 
-    // Toggle sit/crouch with X key (edge-triggered) - only when UI doesn't want keyboard
-    // Blocked while mounted
+    // Retain short taps/wheel pulses for sitting; diving still needs held input.
     bool prevSitting = sitting;
-    bool xDown = !uiWantsKeyboard && input.isKeyPressed(SDL_SCANCODE_X);
-    // While swimming, X dives down instead of toggling sit
-    if (xDown && !xKeyWasDown && !mounted_ && !swimming) {
+    bool xDown = bindings.isCommandDown("SITORSTAND");
+    if (bindings.isCommandPressed("SITORSTAND") && !mounted_ && !swimming) {
         sitting = !sitting;
     }
     if (mounted_) sitting = false;
-    xKeyWasDown = xDown;
-
-    // Reset camera angles with R key (edge-triggered) - only when UI doesn't want keyboard
-    // Does NOT move the player; full reset() is reserved for world-entry/respawn.
-    bool rDown = !uiWantsKeyboard && input.isKeyPressed(SDL_SCANCODE_R);
-    if (rDown && !rKeyWasDown) {
-        resetAngles();
-    }
-    rKeyWasDown = rDown;
 
     // Stand up on any movement input or jump while sitting (WoW behaviour)
     //
@@ -3091,13 +3086,10 @@ void CameraController::update(float deltaTime) {
     // there was no way to move with the mouse at all: the input that would
     // have stood the character up was the one input that could not.
     if (sitting && !movementSuppressed) {
-        const bool anyMoveKey = !uiWantsKeyboard && (
-            input.isKeyPressed(SDL_SCANCODE_W) || input.isKeyPressed(SDL_SCANCODE_S) ||
-            input.isKeyPressed(SDL_SCANCODE_A) || input.isKeyPressed(SDL_SCANCODE_D) ||
-            input.isKeyPressed(SDL_SCANCODE_Q) || input.isKeyPressed(SDL_SCANCODE_E) ||
-            input.isKeyPressed(SDL_SCANCODE_UP) || input.isKeyPressed(SDL_SCANCODE_DOWN) ||
-            input.isKeyPressed(SDL_SCANCODE_LEFT) || input.isKeyPressed(SDL_SCANCODE_RIGHT) ||
-            input.isKeyPressed(SDL_SCANCODE_SPACE));
+        const bool anyMoveKey = bindings.isCommandDown("MOVEFORWARD") ||
+            bindings.isCommandDown("MOVEBACKWARD") || bindings.isCommandDown("TURNLEFT") ||
+            bindings.isCommandDown("TURNRIGHT") || bindings.isCommandDown("STRAFELEFT") ||
+            bindings.isCommandDown("STRAFERIGHT") || bindings.isCommandDown("JUMP");
         // Not gated on uiWantsKeyboard, which is a different question, and not
         // on the interface wanting the mouse either: both flags are already
         // cleared at the press when it did.
@@ -3369,7 +3361,7 @@ void CameraController::processMouseMotion(const SDL_MouseMotionEvent& event) {
 }
 
 void CameraController::processMouseButton(const SDL_MouseButtonEvent& event) {
-    if (!enabled) {
+    if (!enabled && event.down) {
         return;
     }
 

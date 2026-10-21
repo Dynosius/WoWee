@@ -3,20 +3,9 @@
 /**
  * gamepad_controls.hpp - what a controller's sticks and buttons mean.
  *
- * The device itself is core/gamepad.hpp. This is the half that decides a push
- * of the left stick is W held down and a press of A is the space bar, and then
- * says so through the two channels the client already listens on:
- *
- *   core::Input's virtual keys, for everything polled by scancode - movement,
- *   jumping, the action bar, targeting, autorun. The on-screen stick a phone
- *   draws has used them since it was written, which is the proof they carry a
- *   press the whole way: through the movement chain, the animations and the
- *   packets that announce it, with nothing in between knowing where the press
- *   came from.
- *
- *   ImGui's key queue, for the few the interface reads rather than the game -
- *   Escape above all, which goes through KeybindingManager and so through
- *   ImGui::IsKeyPressed. A virtual scancode never reaches it.
+ * The device itself is core/gamepad.hpp. This half sends stick movement and
+ * bound button commands through KeybindingManager; Lua receives binding scripts
+ * and their releases. Unbound gameplay buttons do nothing.
  *
  * Nothing here is platform-specific: SDL resolves a pad on Windows, macOS,
  * Linux and Android to the same Xbox-shaped button set, so the table below is
@@ -44,11 +33,9 @@
 #include <span>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace wowee {
 namespace rendering { class CameraController; }
@@ -62,7 +49,7 @@ namespace ui {
 /// key binding panel does what that binding says instead.
 struct PadBinding {
     SDL_GamepadButton button;
-    SDL_Scancode key;      ///< what core::Input is told is held
+    SDL_Scancode key;      ///< legacy keyboard equivalent, for display
     const char* what;      ///< what a person reads on the settings panel
     /// The interface's own name for what this does - "ACTIONBUTTON3" - or ""
     /// where there is none.
@@ -74,9 +61,8 @@ struct PadBinding {
     /// second copy of this mapping would be wrong the moment either side
     /// moved.
     ///
-    /// Empty for the three the interface has no command for: the bumper that
-    /// is only a modifier, the button that raises the pointer, and the stick
-    /// click that sits the character down.
+    /// Empty for scheme-only roles such as the bumper's Shift modifier.
+    /// Gameplay actions always have a command and obey the shared bindings.
     const char* command = "";
 };
 
@@ -86,8 +72,8 @@ struct PadBinding {
 /// from the poll sites rather than from a list of what WoW binds - and against
 /// what a pad has room for. Twelve action slots do not fit on a controller, so
 /// six sit on the face and the pad, and the left bumper is held to reach the
-/// other six: the client already reads shift as "the bottom-left bar", so the
-/// modifier costs nothing and behaves exactly as it does on a keyboard.
+/// other six through explicit SHIFT-PAD bindings, without synthesising a
+/// keyboard Shift press.
 /// Returned as a span rather than a pointer and an out-parameter: the count
 /// travelling separately is a trap, and it sprang - `check(padExtraBindings(n),
 /// n)` reads n before the call that sets it under one compiler and after it
@@ -120,30 +106,19 @@ struct PadBinding {
 /// binding on it would leave a trackpad that cannot click.
 [[nodiscard]] const char* padKeyName(SDL_GamepadButton button);
 
-/// The key the client polls for a binding command it performs itself, or
-/// SDL_SCANCODE_UNKNOWN when it does not read that command from a scancode.
-///
-/// A button bound to one of these holds that key down, because the poll sites
-/// read fixed scancodes rather than the binding table - pressing the key is
-/// the only way in.
-[[nodiscard]] SDL_Scancode padClientKeyFor(const std::string& command);
-
 /// What the interface made of a pad button, asked once as it goes down.
 struct PadKeyAnswer {
     enum class Kind {
-        Unbound,  ///< nothing is bound to it: the default scheme applies
+        Unbound,  ///< no gameplay command; Back/bumper retain their scheme roles
         Taken,    ///< the interface handled it - a binding being captured, or a script
         Command,  ///< bound to a command the client performs itself
     };
     Kind kind = Kind::Unbound;
     std::string command;  ///< for Command
-    /// For Command, the ImGui key the client listens on when the command is
-    /// one of KeybindingManager's panels; 0 otherwise.
-    int imguiKey = 0;
 };
 
 /// Looks a pad button's binding name up in the interface.
-using PadKeyRouter = std::function<PadKeyAnswer(const char* padKey)>;
+using PadKeyRouter = std::function<PadKeyAnswer(const char* padKey, bool down)>;
 
 /// A finger on the touchpad, followed from one frame to the next.
 ///
@@ -174,9 +149,8 @@ private:
 /**
  * The controller, applied to the client, once a frame.
  *
- * Owns the keys it sets. A key this has not held down is never cleared by it,
- * so on a phone with a pad attached the on-screen stick and the pad can both
- * drive W without one of them switching the other off.
+ * Owns its virtual command sources, so an on-screen stick and a pad can both
+ * drive movement without one of them switching the other off.
  */
 class GamepadControls {
 public:
@@ -197,8 +171,8 @@ public:
     /// pointer mode, because there is nowhere to put the cursor.
     void setWindow(SDL_Window* window) { window_ = window; }
 
-    /// Where a button's binding is looked up. Without one, every button keeps
-    /// the default scheme.
+    /// Where UI capture and Lua scripts are dispatched. Without one, native
+    /// button commands still resolve through the authoritative manager.
     void setKeyRouter(PadKeyRouter router) { keyRouter_ = std::move(router); }
 
     /// How far the pointer travels this frame for a given push of the stick.
@@ -236,8 +210,8 @@ public:
     /// rather than next.
     void update(float deltaTime);
 
-    /// Releases every key this is holding. On leaving the world, on losing the
-    /// pad, and when the interface takes the keyboard.
+    /// Releases held commands, scripts and mouse buttons. On leaving the
+    /// world, on losing the pad, and when the interface takes the keyboard.
     void reset();
 
     /// True while the stick is being pushed, which is when the character
@@ -261,29 +235,19 @@ public:
     [[nodiscard]] bool isInvertLook() const { return invertLook_; }
 
 private:
-    /// What is holding a virtual key, as bits, so one source letting go does
-    /// not release a key another still holds - the stick's W and the W of a
-    /// button bound to MOVEFORWARD.
-    static constexpr std::uint8_t kFromStick = 1;
-    static constexpr std::uint8_t kFromButtons = 2;
-
-    /// Releases the keys and the ImGui keys this is holding, but not the
+    /// Releases movement, button commands and binding scripts, but not the
     /// pointer's mouse buttons: the touchpad drives those, and it goes on
     /// working where the rest of the pad does not - outside the world, and
     /// while the player is typing.
     void releaseKeys();
 
-    /// Sets a virtual key on behalf of one source and remembers which.
-    void holdKey(SDL_Scancode key, bool held, std::uint8_t source);
-
-    /// The left stick, as the four keys the client walks on.
+    /// The left stick, as four movement commands.
     void applyMovement(float x, float y);
     /// The right stick, as a turn of the view.
     void applyLook(float x, float y, float deltaTime);
     /// The triggers, as notches of the wheel.
     void applyZoom(float in, float out, float deltaTime);
-    /// The buttons: a bound one as its command, the rest as the keys in the
-    /// table.
+    /// Holds each routed button's command; unbound buttons stay inert.
     void applyButtons();
     /// Looks up each button's binding as it goes down, and forgets it as it
     /// comes up.
@@ -329,28 +293,26 @@ private:
     bool invertLook_ = false;
     bool announced_ = false;
 
-    /// Which sources are holding each key down, so that letting go clears
-    /// those and only those.
-    std::array<std::uint8_t, SDL_SCANCODE_COUNT> heldKeys_{};
+    /// Pad-local movement state for hysteresis, independent of keyboard keys
+    /// and of other sources holding the same commands.
+    struct StickMovement {
+        bool forward = false;
+        bool back = false;
+        bool left = false;
+        bool right = false;
+    } stickMovement_;
 
     /// How a held button is being answered, decided as it went down and kept
     /// until it comes up - a binding changed mid-press applies from the next.
     struct ButtonRoute {
         PadKeyAnswer::Kind kind = PadKeyAnswer::Kind::Unbound;
-        SDL_Scancode key = SDL_SCANCODE_UNKNOWN;  ///< a command the client polls by scancode
-        int imguiKey = 0;                          ///< a command the client reads through ImGui
-        bool escape = false;                       ///< the game menu, which has a chain of its own
+        std::string command;
+        std::string key;  ///< qualified binding name, latched for script release
     };
     std::array<ButtonRoute, SDL_GAMEPAD_BUTTON_COUNT> routes_{};
     /// Which buttons were down last frame, so each press is looked up once.
     std::array<bool, SDL_GAMEPAD_BUTTON_COUNT> buttonWasDown_{};
-    /// The ImGui keys routed buttons are holding, released as they let go.
-    std::vector<int> imguiKeysDown_;
     PadKeyRouter keyRouter_;
-
-    /// Whether the interface's Escape is currently down, so the press and the
-    /// release are each sent once. ImGui counts repeats itself.
-    bool escapeDown_ = false;
 
     float lookDegreesPerSecond_ = 180.0f;
     /// Left over from a zoom that did not reach a whole notch, so a trigger

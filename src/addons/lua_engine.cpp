@@ -6,6 +6,7 @@
 #include "ui/interface_fonts.hpp"
 #include "ui/ui_colors.hpp"
 #include "ui/framexml_takeover.hpp"
+#include "ui/keybinding_manager.hpp"
 #include <chrono>
 #include <cfloat>
 #include <cctype>
@@ -44,6 +45,14 @@ bool LuaEngine::uiSoundsSuppressed_ = false;
 
 
 namespace {
+// Restore the outer dispatch context even if a Lua handler nests input dispatch.
+struct ScopedCaptureModifiers {
+    int& current;
+    int previous;
+    ScopedCaptureModifiers(int& target, int modifiers) : current(target), previous(target) { current = modifiers; }
+    ~ScopedCaptureModifiers() { current = previous; }
+};
+
 /// Names asked for and not found, while the fallback is on. File-scope because
 /// the recorder is a Lua callback and the report runs at shutdown.
 std::set<std::string>& missingApiNames() {
@@ -4513,7 +4522,9 @@ int lua_Frame_GetChildren(lua_State* L) {
 }
 
 int lua_Frame_EnableKeyboard(lua_State* L) {
-    if (auto* w = widgetOf(L, 1)) w->keyboardEnabled = lua_toboolean(L, 2) != 0;
+    // Through the tree, which indexes keyboard frames for topKeyboardFrame.
+    if (auto* tree = wowee::addons::getWidgetTree(L))
+        tree->setKeyboardEnabled(widgetIdOf(L, 1), lua_toboolean(L, 2) != 0);
     return 0;
 }
 int lua_Frame_IsKeyboardEnabled(lua_State* L) {
@@ -5777,6 +5788,7 @@ void LuaEngine::shutdown() {
         // client's own windows can ask what FrameXML is carrying, and calling
         // through it after the close would be reading a freed state.
         ui::frameXmlSetCursorBridge(nullptr, nullptr);
+        releaseInput();
         lua_close(L_);
         L_ = nullptr;
         // The frames go with the state that built them. Without this the next
@@ -5819,6 +5831,19 @@ void LuaEngine::setLuaServices(const LuaServices& services) {
 
 
 void LuaEngine::registerCoreAPI() {
+    // Private stock-editor seam: do not change Is*KeyDown for addons/dialogs.
+    lua_pushlightuserdata(L_, this);
+    lua_pushcclosure(L_, [](lua_State* L) -> int {
+        auto* self = static_cast<LuaEngine*>(lua_touserdata(L, lua_upvalueindex(1)));
+        const auto mods = self->bindingCaptureModifiers_ >= 0
+            ? self->bindingCaptureModifiers_ : SDL_GetModState();
+        lua_pushboolean(L, (mods & SDL_KMOD_SHIFT) != 0);
+        lua_pushboolean(L, (mods & SDL_KMOD_CTRL) != 0);
+        lua_pushboolean(L, (mods & SDL_KMOD_ALT) != 0);
+        return 3;
+    }, 1);
+    lua_setglobal(L_, "__WoweeBindingCaptureModifiers");
+
     // Override print() to go to chat
     lua_pushcfunction(L_, lua_wow_print);
     lua_setglobal(L_, "print");
@@ -9796,87 +9821,54 @@ void LuaEngine::dispatchText(const char* utf8) {
 /// "ESCAPE" and the digits - so a wrong spelling is a handler that never
 /// matches rather than an error anyone would see.
 static std::string wowKeyName(int sym) {
-    if (sym >= 'a' && sym <= 'z') return std::string(1, static_cast<char>(sym - 32));
-    if (sym >= '0' && sym <= '9') return std::string(1, static_cast<char>(sym));
-    switch (sym) {
-        case 27:         return "ESCAPE";
-        case ' ':        return "SPACE";
-        case '\r':       return "ENTER";
-        case '\t':       return "TAB";
-        case '\b':       return "BACKSPACE";
-        case 0x4000004A: return "HOME";
-        case 0x4000004D: return "END";
-        case 0x4000004B: return "PAGEUP";
-        case 0x4000004E: return "PAGEDOWN";
-        case 0x4000004C: return "DELETE";
-        case 0x40000049: return "INSERT";
-        case 0x40000050: return "LEFT";
-        case 0x4000004F: return "RIGHT";
-        case 0x40000052: return "UP";
-        case 0x40000051: return "DOWN";
-        default: break;
-    }
-    // F1..F12 are contiguous in SDL's scancode-derived range.
-    if (sym >= 0x4000003A && sym <= 0x40000045) {
-        return "F" + std::to_string(sym - 0x4000003A + 1);
-    }
-    return {};
+    return ui::KeybindingManager::keyNameFromSDL(static_cast<uint32_t>(sym));
 }
 
-std::string LuaEngine::bindingCommandFor(int sdlKeycode, bool shift, bool ctrl,
-                                         bool alt) {
-    if (!L_) return "";
-    std::string key = wowKeyName(sdlKeycode);
-    if (key.empty()) return "";
-    // WoW's own spelling, and the order is part of it: ALT before CTRL before
-    // SHIFT, because that is how the binding tables are keyed and a prefix in
-    // any other order matches nothing at all.
-    if (shift) key = "SHIFT-" + key;
-    if (ctrl)  key = "CTRL-"  + key;
-    if (alt)   key = "ALT-"   + key;
-    return bindingCommandForKey(key);
+std::string LuaEngine::bindingCommandFor(int sdlKeycode, bool shift, bool ctrl, bool alt) {
+    return bindingCommandForKey(ui::KeybindingManager::modifiedKey(
+        wowKeyName(sdlKeycode), shift, ctrl, alt));
 }
 
 std::string LuaEngine::bindingCommandForKey(const std::string& key) {
-    if (!L_ || key.empty()) return "";
-    // Which command the key runs, and then the command's script - both asked
-    // of the interface's own tables rather than restated here. GetBindingAction
-    // already honours SetBinding, so a key the player rebound in game answers
-    // to whatever they moved it to without this knowing anything about it.
-    lua_getglobal(L_, "GetBindingAction");
-    if (!lua_isfunction(L_, -1)) { lua_pop(L_, 1); return ""; }
-    lua_pushstring(L_, key.c_str());
-    if (lua_pcall(L_, 1, 1, 0) != 0) {
-        LOG_WARNING("GetBindingAction(", key, ") failed: ",
-                    luaL_optstring(L_, -1, "?"));
-        lua_pop(L_, 1);
-        return "";
-    }
-    const char* got = lua_tostring(L_, -1);
-    std::string command = got ? got : "";
-    lua_pop(L_, 1);
-    return command;
+    return ui::KeybindingManager::getInstance().resolveCommand(key);
 }
 
-bool LuaEngine::dispatchBindingKey(int sdlKeycode, bool shift, bool ctrl,
-                                   bool alt, bool down) {
-    if (!L_) return false;
+bool LuaEngine::dispatchBindingKey(int sdlKeycode, bool shift, bool ctrl, bool alt, bool down) {
+    return dispatchBindingInput(wowKeyName(sdlKeycode), shift, ctrl, alt, down);
+}
+
+bool LuaEngine::dispatchBindingInput(const std::string& key, bool shift, bool ctrl, bool alt, bool down) {
+    if (!L_ || key.empty()) return false;
     if (!down) {
-        auto held = heldBindings_.find(sdlKeycode);
+        auto held = heldBindings_.find(key);
         if (held == heldBindings_.end()) return false;
-        const std::string command = std::move(held->second);
+        const HeldBinding binding = std::move(held->second);
         heldBindings_.erase(held);
-        return runBindingScript(command, false);
+        if (binding.releaseScript != LUA_NOREF) {
+            (void)runBindingScript(binding.command, false, binding.releaseScript);
+            luaL_unref(L_, LUA_REGISTRYINDEX, binding.releaseScript);
+        }
+        return true;
     }
-    // A key held down repeats; the binding it pressed waits for its release.
-    if (heldBindings_.count(sdlKeycode)) return true;
-    const std::string command = bindingCommandFor(sdlKeycode, shift, ctrl, alt);
-    if (command.empty()) return false;
-    // Left alone if the client performs it. Not "already handled, so skip the
-    // work" - running it as well would undo it.
-    if (clientActsOnBinding(command)) return false;
-    if (!runBindingScript(command, true)) return false;
-    if (bindingRunsOnUp(command)) heldBindings_[sdlKeycode] = command;
+    if (heldBindings_.count(key)) return true;
+    if (editBoxHasFocus() || ImGui::GetIO().WantTextInput) return false;
+    const std::string command = bindingCommandForKey(ui::KeybindingManager::modifiedKey(key, shift, ctrl, alt));
+    if (command.empty() || clientActsOnBinding(command)) return false;
+    int releaseScript = LUA_NOREF;
+    if (bindingRunsOnUp(command)) {
+        lua_getglobal(L_, "__WoweeBindingScripts");
+        if (lua_istable(L_, -1)) {
+            lua_getfield(L_, -1, command.c_str());
+            if (lua_isfunction(L_, -1)) releaseScript = luaL_ref(L_, LUA_REGISTRYINDEX);
+            else lua_pop(L_, 1);
+        }
+        lua_pop(L_, 1);
+    }
+    if (!runBindingScript(command, true)) {
+        if (releaseScript != LUA_NOREF) luaL_unref(L_, LUA_REGISTRYINDEX, releaseScript);
+        return false;
+    }
+    heldBindings_[key] = {command, releaseScript};
     return true;
 }
 
@@ -9889,11 +9881,12 @@ bool LuaEngine::bindingRunsOnUp(const std::string& command) {
     return onUp;
 }
 
-bool LuaEngine::runBindingScript(const std::string& command, bool down) {
+bool LuaEngine::runBindingScript(const std::string& command, bool down, int scriptRef) {
     if (!L_) return false;
     lua_getglobal(L_, "__WoweeBindingScripts");
-    if (!lua_istable(L_, -1)) { lua_pop(L_, 1); return false; }
-    lua_getfield(L_, -1, command.c_str());
+    if (scriptRef != LUA_NOREF) lua_rawgeti(L_, LUA_REGISTRYINDEX, scriptRef);
+    else if (lua_istable(L_, -1)) lua_getfield(L_, -1, command.c_str());
+    else { lua_pop(L_, 1); return false; }
     if (!lua_isfunction(L_, -1)) { lua_pop(L_, 2); return false; }
     lua_pushstring(L_, down ? "down" : "up");
     if (lua_pcall(L_, 1, 0, 0) != 0) {
@@ -9907,9 +9900,22 @@ bool LuaEngine::runBindingScript(const std::string& command, bool down) {
     return true;
 }
 
-LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey) {
+LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey, bool down) {
     PadKeyOutcome outcome;
     if (!L_ || !padKey || !*padKey) return outcome;
+    if (!down) {
+        auto held = heldPadFrameKeys_.find(padKey);
+        if (held != heldPadFrameKeys_.end()) {
+            const HeldFrameKey recipient = std::move(held->second);
+            heldPadFrameKeys_.erase(held);
+            callFrameScript(recipient.frame, "OnKeyUp", recipient.key.c_str());
+            outcome.taken = true;
+        }
+        outcome.taken = dispatchBindingInput(padKey, false, false, false, false) || outcome.taken;
+        return outcome;
+    }
+    if (heldPadFrameKeys_.count(padKey)) { outcome.taken = true; return outcome; }
+    if (editBoxHasFocus() || ImGui::GetIO().WantTextInput) { outcome.taken = true; return outcome; }
 
     // The key binding panel, while one of its rows is waiting for a key - and
     // only then. Every other frame that listens for keys is a dialog reading
@@ -9927,6 +9933,7 @@ LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey) {
         }
         lua_pop(L_, 1);  // the answer, or the error in its place
         if (waiting) {
+            heldPadFrameKeys_[padKey] = {top->id, padKey, true};
             callFrameScript(top->id, "OnKeyDown", padKey);
             outcome.taken = true;
             return outcome;
@@ -9942,7 +9949,7 @@ LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey) {
     // Taken whether or not a script ran. A button bound to a command with no
     // script doing nothing is right; falling back to the default scheme would
     // be the button doing what the player bound it away from.
-    (void)runBindingScript(command, true);
+    (void)dispatchBindingInput(padKey, false, false, false, true);
     outcome.taken = true;
     return outcome;
 }
@@ -9954,8 +9961,11 @@ LuaEngine::PadKeyOutcome LuaEngine::dispatchPadKey(const char* padKey) {
 /// key goes straight through to the game.
 const ui::Widget* LuaEngine::topKeyboardFrame() const {
     const ui::Widget* best = nullptr;
-    for (size_t id = 1; id < widgets_.size(); ++id) {
-        const ui::Widget* w = widgets_.get(static_cast<uint32_t>(id));
+    // Only the frames that enabled the keyboard, in ascending id order like the
+    // full scan this replaced. Key dispatch and held-key capture ask this on
+    // the input path, so it must not walk the whole tree.
+    for (uint32_t id : widgets_.keyboardFrames()) {
+        const ui::Widget* w = widgets_.get(id);
         if (!w || !w->keyboardEnabled || !w->visible) continue;
         if (!best) { best = w; continue; }
         if (w->effStrata > best->effStrata ||
@@ -9964,6 +9974,11 @@ const ui::Widget* LuaEngine::topKeyboardFrame() const {
         }
     }
     return best;
+}
+
+bool LuaEngine::keyboardFrameBlocksInput() const {
+    const ui::Widget* frame = topKeyboardFrame();
+    return frame && !frame->propagateKeys;
 }
 
 void LuaEngine::dispatchFrameChar(const char* utf8) {
@@ -9985,18 +10000,47 @@ void LuaEngine::dispatchFrameChar(const char* utf8) {
     }
 }
 
-bool LuaEngine::dispatchFrameKey(int sdlKeycode, bool down) {
+bool LuaEngine::dispatchFrameKey(int sdlKeycode, bool down, int bindingKeycode, int modifiers) {
     if (!L_) return false;
-    const std::string key = wowKeyName(sdlKeycode);
-    if (key.empty()) return false;
-
+    const ScopedCaptureModifiers captureModifiers(bindingCaptureModifiers_, modifiers);
+    const int identity = bindingKeycode ? bindingKeycode : sdlKeycode;
+    auto held = heldFrameKeys_.find(identity);
+    if (held != heldFrameKeys_.end()) {
+        const HeldFrameKey recipient = held->second;
+        if (!down) heldFrameKeys_.erase(held);
+        callFrameScript(recipient.frame, down ? "OnKeyDown" : "OnKeyUp", recipient.key.c_str());
+        return recipient.consumed;
+    }
+    if (!down) return false;
     const ui::Widget* best = topKeyboardFrame();
     if (!best) return false;
+    const std::string key = wowKeyName(best->name == "KeyBindingFrame" && bindingKeycode
+                                     ? bindingKeycode : sdlKeycode);
+    if (key.empty()) return false;
+    const HeldFrameKey recipient{best->id, key, !best->propagateKeys};
+    heldFrameKeys_[identity] = recipient;
+    callFrameScript(recipient.frame, "OnKeyDown", key.c_str());
+    return recipient.consumed;
+}
 
-    callFrameScript(best->id, down ? "OnKeyDown" : "OnKeyUp", key.c_str());
-    // Consumed unless the frame asked for the key to carry on, which is WoW's
-    // default and the reason a dialog stops the character walking.
-    return !best->propagateKeys;
+void LuaEngine::releaseInput() {
+    auto bindings = std::move(heldBindings_);
+    auto frames = std::move(heldFrameKeys_);
+    auto pads = std::move(heldPadFrameKeys_);
+    heldBindings_.clear();
+    heldFrameKeys_.clear();
+    heldPadFrameKeys_.clear();
+    std::fill(std::begin(mouseModifiers_), std::end(mouseModifiers_), -1);
+    if (!L_) return;
+    for (const auto& [key, binding] : bindings) {
+        if (binding.releaseScript == LUA_NOREF) continue;
+        (void)runBindingScript(binding.command, false, binding.releaseScript);
+        luaL_unref(L_, LUA_REGISTRYINDEX, binding.releaseScript);
+    }
+    for (const auto& [key, recipient] : frames)
+        callFrameScript(recipient.frame, "OnKeyUp", recipient.key.c_str());
+    for (const auto& [key, recipient] : pads)
+        callFrameScript(recipient.frame, "OnKeyUp", recipient.key.c_str());
 }
 
 void LuaEngine::dispatchKey(int sdlKeycode, bool ctrlHeld) {
@@ -10137,6 +10181,7 @@ void LuaEngine::dispatchKey(int sdlKeycode, bool ctrlHeld) {
         case kHome:  w->cursorPos = 0; break;
         case kEnd:   w->cursorPos = len; break;
         case kReturn:
+        case 0x40000058: // SDLK_KP_ENTER
             // A box declared multiLine takes the return as a line break rather
             // than as "done". The mail body says multiLine="true" and letters
             // ="500"; reading the limit and not the flag left a letter that
@@ -10422,8 +10467,9 @@ void LuaEngine::updateScrollRanges() {
     }
 }
 
-bool LuaEngine::dispatchMouseWheel(float x, float y, float delta) {
+bool LuaEngine::dispatchMouseWheel(float x, float y, float delta, int modifiers) {
     if (!L_) return false;
+    const ScopedCaptureModifiers captureModifiers(bindingCaptureModifiers_, modifiers);
     const float s = widgets_.uiScale();
     if (s > 0.0f) { x /= s; y /= s; }
 
@@ -10638,6 +10684,11 @@ void LuaEngine::releaseMouseHover() {
     // The next position the tree hears is a fresh one rather than the far end
     // of however far the cursor travelled while it was not listening.
     haveCursor_ = false;
+}
+
+void LuaEngine::noteMouseModifiers(int button, int modifiers) {
+    const int index = button == SDL_BUTTON_MIDDLE ? 2 : button == SDL_BUTTON_RIGHT ? 1 : button - 1;
+    if (index >= 0 && index < kMouseButtons) mouseModifiers_[index] = modifiers;
 }
 
 void LuaEngine::dispatchMouse(float x, float y, float screenH, MouseButtons buttons) {
@@ -10951,6 +11002,7 @@ void LuaEngine::dispatchMouse(float x, float y, float screenH, MouseButtons butt
     };
 
     for (int i = 0; i < kMouseButtons; ++i) {
+        const ScopedCaptureModifiers captureModifiers(bindingCaptureModifiers_, mouseModifiers_[i]);
         const Button& b = pressed[i];
         if (b.down && !buttonDown_[i]) {
             buttonDown_[i] = true;

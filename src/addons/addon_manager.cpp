@@ -386,6 +386,9 @@ void AddonManager::loadAllAddons() {
         // stub would put the panel nowhere.
         registerWoweeOptionsPanel();
         giveCoinAmountsClearance();
+        if (!luaEngine_.executeString(kBindingDeviceEditor)) {
+            LOG_WARNING("Binding device selector did not install: ", luaEngine_.lastError());
+        }
         // Populating a dropdown is not opening one. Catches the initializers
         // driven by the world-entry packet, which arrives long after this.
         if (!luaEngine_.executeString(kDropdownInitSilenceLua)) {
@@ -1615,6 +1618,9 @@ bool AddonManager::loadAddon(const TocFile& addon) {
     // Fire ADDON_LOADED event after all addon files are executed
     // This is the standard WoW pattern for addon initialization
     if (success) {
+        if (addon.addonName == "Blizzard_BindingUI" && !luaEngine_.executeString(kBindingDeviceEditor)) {
+            LOG_WARNING("Binding device selector did not install: ", luaEngine_.lastError());
+        }
         luaEngine_.fireEvent("ADDON_LOADED", {addon.addonName});
     }
     return success;

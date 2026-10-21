@@ -2291,6 +2291,15 @@ wowee_add_test(test_auction_slot_filter
 wowee_add_test(test_binding_file
     SOURCES test_binding_file.cpp)
 
+# Production manager and its authoritative controller defaults, without Lua.
+wowee_add_test(test_binding_commands
+    SOURCES test_binding_commands.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/keybinding_manager.cpp
+        ${CMAKE_SOURCE_DIR}/src/ui/gamepad_bindings.cpp
+        ${TEST_COMMON_SOURCES})
+target_compile_features(test_binding_commands PRIVATE cxx_std_20)
+target_link_libraries(test_binding_commands PRIVATE imgui SDL3::SDL3)
+
 # ── test_tab_target ──────────────────────────────────────────
 # Which units Tab and TargetNearestEnemy may pick: hostile and neutral alike,
 # but not friendly units, critters, or units the server marks unselectable,
@@ -2593,6 +2602,28 @@ if(NOT ANDROID)
     target_sources(test_game_replay PRIVATE test_game_replay_energize.cpp)
     register_test_target(test_game_replay)
     target_sources(test_game_replay PRIVATE test_game_replay_spell_logs.cpp)
+
+    # Same complete client objects as game_replay: never replace client classes
+    # with test implementations or copy an input-routing branch into a seam.
+    add_executable(test_input_integration test_input_integration.cpp
+        "$<FILTER:$<TARGET_OBJECTS:wowee>,EXCLUDE,/main([.]cpp)?[.]o(bj)?$>")
+    target_include_directories(test_input_integration PRIVATE ${TEST_INCLUDE_DIRS}
+        $<TARGET_PROPERTY:wowee,INCLUDE_DIRECTORIES>)
+    target_include_directories(test_input_integration SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+    target_compile_definitions(test_input_integration PRIVATE
+        WOWEE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        $<TARGET_PROPERTY:wowee,COMPILE_DEFINITIONS>)
+    target_compile_features(test_input_integration PRIVATE cxx_std_20)
+    target_link_libraries(test_input_integration PRIVATE catch2_main
+        $<TARGET_PROPERTY:wowee,LINK_LIBRARIES>)
+    wowee_test_link_glm(test_input_integration)
+    target_link_directories(test_input_integration PRIVATE
+        $<TARGET_PROPERTY:wowee,LINK_DIRECTORIES>)
+    target_link_options(test_input_integration PRIVATE
+        $<TARGET_PROPERTY:wowee,LINK_OPTIONS>)
+    add_dependencies(test_input_integration wowee)
+    add_test(NAME input_integration COMMAND test_input_integration)
+    register_test_target(test_input_integration)
 endif()
 
 # ── Sanitizers, once every test target exists ────────────────

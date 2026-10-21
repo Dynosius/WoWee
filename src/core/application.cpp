@@ -277,19 +277,16 @@ bool Application::initialize() {
     {
         auto& pad = core::gamepad();
         pad.init();
-        // What a button is bound to is the interface's to say, and the
-        // interface is built after this - so the router asks for it on each
-        // press rather than holding on to it.
-        ui::gamepadControls().setKeyRouter([this](const char* padKey) {
+        // UI capture and Lua script dispatch, layered over manager resolution.
+        ui::gamepadControls().setKeyRouter([this](const char* padKey, bool down) {
             ui::PadKeyAnswer answer;
             auto* engine = addonManager_ ? addonManager_->getLuaEngine() : nullptr;
             if (!engine) return answer;
-            auto outcome = engine->dispatchPadKey(padKey);
+            auto outcome = engine->dispatchPadKey(padKey, down);
             if (outcome.taken) {
                 answer.kind = ui::PadKeyAnswer::Kind::Taken;
             } else if (!outcome.command.empty()) {
                 answer.kind = ui::PadKeyAnswer::Kind::Command;
-                answer.imguiKey = addons::clientImGuiKeyForBinding(outcome.command);
                 answer.command = std::move(outcome.command);
             }
             return answer;
@@ -1372,6 +1369,9 @@ void Application::run() {
         }
     } watchdogStop{watchdogRunning, watchdogThread};
 
+    // Mouse events carry no modifier mask. Track the queue position rather
+    // than asking SDL for the final state after it has pumped all events.
+    SDL_Keymod queuedModifiers = SDL_GetModState();
     while (running && !window->shouldClose()) {
         const auto frameStart = std::chrono::steady_clock::now();
         beatWatchdog();
@@ -1424,6 +1424,7 @@ void Application::run() {
         // ever describes the iteration it was set in: the pump sets it and
         // the draw, further down this same iteration, is the only reader.
         ui::clearInterfaceConsumedKeys();
+        ui::KeybindingManager::getInstance().beginInputFrame();
         ui::ageChatSlashEcho();
 
         // Ask for text input while one of the interface's edit boxes has the
@@ -1470,7 +1471,32 @@ void Application::run() {
             // The map window's own events stop here. A click on the map is not
             // a click on the world behind the game's window, and neither the
             // interface nor the camera may act on it.
+            // The map forwards keyboard input but consumes its window events.
+            // Observe focus first so forwarded keys can resume after a map focus gain.
+            const bool focusEvent = event.type == SDL_EVENT_WINDOW_FOCUS_LOST ||
+                                    event.type == SDL_EVENT_WINDOW_FOCUS_GAINED;
+            if (focusEvent) ui::KeybindingManager::getInstance().processInputEvent(event);
+            if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP)
+                queuedModifiers = event.key.mod;
+            if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+                queuedModifiers = SDL_KMOD_NONE;
+                if (addonManager_ && addonManager_->getLuaEngine())
+                    addonManager_->getLuaEngine()->releaseInput();
+                ui::gamepadControls().reset();
+                if (renderer && renderer->getCameraController())
+                    renderer->getCameraController()->releaseMouseCapture();
+            }
             if (mapWindow_ && mapWindow_->handleEvent(event)) continue;
+
+            // Submit native edges only after the UI has had first refusal,
+            // including branches that leave this iteration with continue.
+            struct NativeInputEvent {
+                const SDL_Event& event;
+                bool focus;
+                ~NativeInputEvent() {
+                    if (!focus) ui::KeybindingManager::getInstance().processInputEvent(event);
+                }
+            } nativeInputEvent{event, focusEvent};
 
             // Connected and disconnected, which is all the pad needs from the
             // queue - its sticks and buttons are sampled once a frame rather
@@ -1515,8 +1541,32 @@ void Application::run() {
                 uiManager->processEvent(event);
             }
 
-            // Pass mouse events to camera controller (skip when UI has mouse focus)
-            if (renderer && renderer->getCameraController() && !ImGui::GetIO().WantCaptureMouse) {
+            // Mouse bindings use the same command lookup as keyboard bindings.
+            // Releases still reach scripts after the pointer enters a UI frame.
+            bool pointerBindingTaken = false;
+            if (addonManager_ && addonManager_->getLuaEngine() &&
+                ((state == AppState::IN_GAME && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) ||
+                 event.type == SDL_EVENT_MOUSE_BUTTON_UP)) {
+                const bool down = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+                addonManager_->getLuaEngine()->noteMouseModifiers(event.button.button, queuedModifiers);
+                if (!down || (!ImGui::GetIO().WantCaptureMouse && !ui::frameXmlOwnsMouse())) {
+                    const auto mods = queuedModifiers;
+                    pointerBindingTaken = addonManager_->getLuaEngine()->dispatchBindingInput(
+                        ui::KeybindingManager::mouseButtonNameFromSDL(event.button.button),
+                        (mods & SDL_KMOD_SHIFT) != 0, (mods & SDL_KMOD_CTRL) != 0,
+                        (mods & SDL_KMOD_ALT) != 0, down);
+                }
+            }
+
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                (pointerBindingTaken || ImGui::GetIO().WantCaptureMouse || ui::frameXmlOwnsMouse()))
+                ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
+                    ui::KeybindingManager::mouseButtonNameFromSDL(event.button.button)));
+
+            // Always deliver camera releases, even if capture/script ownership changed.
+            if (renderer && renderer->getCameraController() &&
+                (event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+                 (!ImGui::GetIO().WantCaptureMouse && !pointerBindingTaken))) {
                 if (event.type == SDL_EVENT_MOUSE_MOTION) {
                     renderer->getCameraController()->processMouseMotion(event.motion);
                 }
@@ -1539,11 +1589,34 @@ void Application::run() {
                         const ImGuiIO& mio = ImGui::GetIO();
                         takenByUi = addonManager_->getLuaEngine()->dispatchMouseWheel(
                             mio.MousePos.x, mio.DisplaySize.y - mio.MousePos.y,
-                            wheelClicks(event.wheel.y, event.wheel.timestamp));
+                            wheelClicks(event.wheel.y, event.wheel.timestamp), queuedModifiers);
                     }
                     if (!takenByUi) {
-                        renderer->getCameraController()->processMouseWheel(
-                            static_cast<float>(event.wheel.y));
+                        const auto mods = queuedModifiers;
+                        const bool shift = (mods & SDL_KMOD_SHIFT) != 0;
+                        const bool ctrl = (mods & SDL_KMOD_CTRL) != 0;
+                        const bool alt = (mods & SDL_KMOD_ALT) != 0;
+                        const std::string key = event.wheel.y > 0 ? "MOUSEWHEELUP" : "MOUSEWHEELDOWN";
+                        auto& bindings = ui::KeybindingManager::getInstance();
+                        const std::string command = bindings.resolveCommand(
+                            ui::KeybindingManager::modifiedKey(key, shift, ctrl, alt));
+                        if (!command.empty() && event.wheel.y != 0) {
+                            if (command == "CAMERAZOOMIN" || command == "CAMERAZOOMOUT") {
+                                // Only pointer capture gates world zoom, not keyboard/text focus.
+                                // Preserve fractional trackpad travel and the camera's zoom calibration.
+                                renderer->getCameraController()->processMouseWheel(
+                                    std::abs(event.wheel.y) * (command == "CAMERAZOOMIN" ? 1.0f : -1.0f));
+                            } else if (state == AppState::IN_GAME) {
+                                if (addons::clientActsOnBinding(command)) {
+                                    bindings.setVirtualCommand(command, "mouse-wheel", true);
+                                    bindings.setVirtualCommand(command, "mouse-wheel", false);
+                                } else if (addonManager_ && addonManager_->getLuaEngine()) {
+                                    auto* engine = addonManager_->getLuaEngine();
+                                    engine->dispatchBindingInput(key, shift, ctrl, alt, true);
+                                    engine->dispatchBindingInput(key, shift, ctrl, alt, false);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1644,7 +1717,8 @@ void Application::run() {
             }
             if (event.type == SDL_EVENT_KEY_UP && addonManager_ && addonsLoaded_) {
                 if (auto* engine = addonManager_->getLuaEngine()) {
-                    engine->dispatchBindingKey(event.key.key, false, false, false, false);
+                    engine->dispatchBindingKey(SDL_SCANCODE_TO_KEYCODE(event.key.scancode), false, false, false, false);
+                    engine->dispatchFrameKey(event.key.key, false, SDL_SCANCODE_TO_KEYCODE(event.key.scancode), event.key.mod);
                 }
             }
             if (event.type == SDL_EVENT_KEY_DOWN) {
@@ -1654,6 +1728,8 @@ void Application::run() {
                 if (addonManager_ && addonsLoaded_) {
                     if (auto* engine = addonManager_->getLuaEngine();
                         engine && engine->editBoxHasFocus()) {
+                        ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
+                            ui::KeybindingManager::keyNameFromSDL(SDL_SCANCODE_TO_KEYCODE(event.key.scancode))));
                         // Command counts as control here, because this is the
                         // copy-and-paste modifier and on a Mac that is the one
                         // every other program uses. Windows and Linux send
@@ -1699,7 +1775,10 @@ void Application::run() {
                     // actually takes it, so with nothing up the movement
                     // keys and every binding carry on exactly as before.
                     if (auto* engine = addonManager_->getLuaEngine()) {
-                        if (engine->dispatchFrameKey(event.key.key, true)) {
+                        if (engine->dispatchFrameKey(SDL_GetKeyFromScancode(event.key.scancode, SDL_KMOD_NONE, true), true,
+                                                     SDL_SCANCODE_TO_KEYCODE(event.key.scancode), event.key.mod)) {
+                            ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
+                                ui::KeybindingManager::keyNameFromSDL(SDL_SCANCODE_TO_KEYCODE(event.key.scancode))));
                             // Escape says so, because "Escape does nothing"
                             // is a live report and this is one of the three
                             // ways the press can end before the chain that
@@ -1726,12 +1805,14 @@ void Application::run() {
                     // the interface's own key-binding panel and then never
                     // honoured by any press.
                     if (auto* engine = addonManager_->getLuaEngine()) {
-                        const SDL_Keymod mods = SDL_GetModState();
-                        if (engine->dispatchBindingKey(
-                                event.key.key,
+                        const SDL_Keymod mods = event.key.mod;
+                        if (!event.key.repeat && engine->dispatchBindingKey(
+                                SDL_SCANCODE_TO_KEYCODE(event.key.scancode),
                                 (mods & SDL_KMOD_SHIFT) != 0,
                                 (mods & SDL_KMOD_CTRL) != 0,
                                 (mods & SDL_KMOD_ALT) != 0, true)) {
+                            ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
+                                ui::KeybindingManager::keyNameFromSDL(SDL_SCANCODE_TO_KEYCODE(event.key.scancode))));
                             // The fourth way a press can end in the pump - an
                             // interface key binding claimed it - which had no
                             // line. For the DEFAULT Escape this does not fire:
@@ -1769,6 +1850,8 @@ void Application::run() {
                 auto sc = event.key.scancode;
                 bool isFKey = (sc >= SDL_SCANCODE_F1 && sc <= SDL_SCANCODE_F12);
                 if (uiHasKeyboard && !isFKey) {
+                    ui::noteInterfaceConsumedKey(ui::KeybindingManager::keyFromName(
+                        ui::KeybindingManager::keyNameFromSDL(SDL_SCANCODE_TO_KEYCODE(event.key.scancode))));
                     continue;  // Let ImGui handle the keystroke
                 }
 
@@ -1814,10 +1897,7 @@ void Application::run() {
             break;
         }
 
-        // The pad, before the keyboard is sampled: it drives the client
-        // through core::Input's virtual keys, and Input::update is what turns
-        // those into a press. Applied after that read, every button would be
-        // one frame late and a tap of one could be missed entirely.
+        // Poll the real pad adapter before gameplay consumes manager commands.
         core::gamepad().update();
         namePadKeysForInterface();
         ui::gamepadControls().setInWorld(state == AppState::IN_GAME);
@@ -1834,6 +1914,25 @@ void Application::run() {
 
         // Update input
         Input::getInstance().update();
+        // A keyboard frame is not text focus: propagated shortcuts and controller
+        // commands must still work. Block only physically held native keys when
+        // the top frame does not propagate, including frames without key repeats.
+        if (addonManager_ && addonsLoaded_) {
+            if (auto* engine = addonManager_->getLuaEngine(); engine && engine->keyboardFrameBlocksInput()) {
+                int count = 0;
+                const bool* keys = SDL_GetKeyboardState(&count);
+                for (int scan = 1; scan < count; ++scan) {
+                    if (!keys[scan]) continue;
+                    const auto key = ui::KeybindingManager::keyFromName(ui::KeybindingManager::keyNameFromSDL(
+                        SDL_SCANCODE_TO_KEYCODE(scan)));
+                    if (key != ImGuiKey_None) ui::noteInterfaceConsumedKey(key);
+                }
+            }
+        }
+        if (ui::frameXmlOwnsMouse())
+            for (int key = ImGuiKey_MouseLeft; key <= ImGuiKey_MouseX2; ++key)
+                ui::noteInterfaceConsumedKey(static_cast<ImGuiKey>(key));
+        ui::KeybindingManager::getInstance().updateInput();
 
         // Update application state
         try {
@@ -1976,6 +2075,13 @@ void Application::updateMapWindow() {
 void Application::shutdown() {
     LOG_DEBUG("Shutting down application...");
 
+    // Release scripts while their game/UI services are still alive.
+    if (addonManager_ && addonManager_->getLuaEngine())
+        addonManager_->getLuaEngine()->releaseInput();
+    ui::gamepadControls().setInWorld(false);
+#ifdef __ANDROID__
+    ui::touchControls().setInWorld(false);
+#endif
     // Before the window, whose destructor takes SDL down with it.
     ui::gamepadControls().setKeyRouter(nullptr);
     core::gamepad().shutdown();
@@ -2108,6 +2214,16 @@ void Application::setState(AppState newState) {
     }
 
     LOG_INFO("State transition: ", static_cast<int>(state), " -> ", static_cast<int>(newState));
+    if (state == AppState::IN_GAME) {
+        if (addonManager_ && addonManager_->getLuaEngine())
+            addonManager_->getLuaEngine()->releaseInput();
+        ui::gamepadControls().setInWorld(false);
+#ifdef __ANDROID__
+        ui::touchControls().setInWorld(false);
+#endif
+        if (renderer && renderer->getCameraController())
+            renderer->getCameraController()->releaseMouseCapture();
+    }
     state = newState;
 
     // Handle state transitions
@@ -3728,8 +3844,7 @@ void Application::updateInGame(float deltaTime, const char*& updateCheckpoint) {
     {
         const bool uiWantsKeyboard = ImGui::GetIO().WantCaptureKeyboard ||
                                      ui::interfaceTakingTypedInput();
-        auto& input = Input::getInstance();
-        if (!uiWantsKeyboard && input.isKeyJustPressed(SDL_SCANCODE_Z) && appearanceComposer_) {
+        if (!uiWantsKeyboard && ui::KeybindingManager::getInstance().isCommandPressed("TOGGLESHEATH") && appearanceComposer_) {
             if (renderer && renderer->getAnimationController()) {
                 renderer->getAnimationController()->playWeaponSheathAnimation(
                     appearanceComposer_->sheathSpot(game::EquipSlot::MAIN_HAND),
@@ -4835,9 +4950,8 @@ void Application::render() {
                 buttons.left   = ImGui::IsMouseDown(ImGuiMouseButton_Left);
                 buttons.right  = ImGui::IsMouseDown(ImGuiMouseButton_Right);
                 buttons.middle = ImGui::IsMouseDown(ImGuiMouseButton_Middle);
-                // ImGui has no X1/X2 enum names; its SDL3 backend maps them to 3/4.
-                buttons.button4 = ImGui::IsMouseDown(3);
-                buttons.button5 = ImGui::IsMouseDown(4);
+                buttons.button4 = ImGui::IsKeyDown(ImGuiKey_MouseX1);
+                buttons.button5 = ImGui::IsKeyDown(ImGuiKey_MouseX2);
                 engine->dispatchMouse(io.MousePos.x, io.MousePos.y,
                                       io.DisplaySize.y, buttons);
 

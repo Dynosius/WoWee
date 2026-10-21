@@ -1646,6 +1646,23 @@ void emitBindings(Emitter& e, const XmlNode& root) {
             e.result.lua += b.text;
             e.result.lua += "\nend\n";
         }
+        if (name == "CAMERAZOOMOUT") {
+            // Angle-only reset is a native camera command, rebindable beside
+            // zoom. Its R default belongs solely to KeybindingManager.
+            e.line("BINDING_NAME_WOWEERESETCAMERA = \"Reset Camera Angles\"");
+            e.line("__WoweeBindings[#__WoweeBindings+1] = \"WOWEERESETCAMERA\"");
+            e.line("__WoweeBindingScripts[\"WOWEERESETCAMERA\"] = function(keystate) end");
+        }
+        if (name == "SCREENSHOT") {
+            // Native WoWee recording is available on every platform. Keep its
+            // editable row beside Screenshot in Blizzard's actual catalogue,
+            // not in the unsupported Mac MovieRecording_* command family.
+            // Assignments/defaults belong only to KeybindingManager; gameplay
+            // polls this command just as it polls SCREENSHOT.
+            e.line("BINDING_NAME_WOWEETOGGLERECORDING = \"Start/Stop Video Recording\"");
+            e.line("__WoweeBindings[#__WoweeBindings+1] = \"WOWEETOGGLERECORDING\"");
+            e.line("__WoweeBindingScripts[\"WOWEETOGGLERECORDING\"] = function(keystate) end");
+        }
     }
 }
 
