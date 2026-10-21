@@ -1488,8 +1488,8 @@ def check_binding_dispatch():
     argv = [str(exe), str(data),
             "--bind:W",                                   # MOVEFORWARD, polled
             "--bind:B",                                   # TOGGLEBACKPACK, live
-            "--bind:X",                                   # nothing bound
-            "SetBinding('J', 'OPENALLBAGS')", "--bind:J"] # no client path
+            "--bind:U",                                   # nothing bound
+            "SetBinding('G', 'TOGGLEWORLDSTATESCORES')", "--bind:G"] # no client path
     try:
         out = subprocess.run(argv, capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
@@ -1500,9 +1500,9 @@ def check_binding_dispatch():
          "movement is polled every frame; a binding for it would move twice"),
         ("B -> declined TOGGLEBACKPACK",
          "the client opens the bags itself; a binding would shut them again"),
-        ("X -> nothing bound to this key",
+        ("U -> nothing bound to this key",
          "an unbound key must stay silent"),
-        ("J -> ran OPENALLBAGS",
+        ("G -> ran TOGGLEWORLDSTATESCORES",
          "a command the client has no path for must actually run"),
     ]
     for needle, why in wanted:
