@@ -306,6 +306,10 @@ adb push ~/Data-phone/. /sdcard/Android/data/com.wowee.client/files/Data/
 adb shell chmod -R a+rwX /sdcard/Android/data/com.wowee.client/files/Data
 ```
 
+The subset also carries the extracted `WoW.exe` and its DLLs from
+`expansions/*/misc`. Without them a server that runs Warden sees every memory
+check from the phone fail, which some servers treat as a modified client.
+
 The trailing `/.` matters: push the **contents**, not the directory. Nesting it
 one level deeper leaves the client unable to find its `manifest.json`, and it
 starts with no game data at all.
