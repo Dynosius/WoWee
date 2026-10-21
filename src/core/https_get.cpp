@@ -13,8 +13,36 @@
 
 #include "network/net_platform.hpp"
 
+#ifdef _WIN32
+#include <wincrypt.h>
+#endif
+
 namespace wowee::core {
 namespace {
+
+#ifdef _WIN32
+/// OpenSSL has no trust store of its own on Windows, so the default verify
+/// paths find nothing and every chain fails. Hand it the system's roots.
+/// Returns how many certificates were added.
+int loadWindowsRoots(SSL_CTX* ctx) {
+    X509_STORE* store = SSL_CTX_get_cert_store(ctx);
+    HCERTSTORE sys = CertOpenSystemStoreW(0, L"ROOT");
+    if (store == nullptr || sys == nullptr) return 0;
+
+    int added = 0;
+    for (PCCERT_CONTEXT cert = CertEnumCertificatesInStore(sys, nullptr); cert != nullptr;
+         cert = CertEnumCertificatesInStore(sys, cert)) {
+        const unsigned char* der = cert->pbCertEncoded;
+        X509* x = d2i_X509(nullptr, &der, static_cast<long>(cert->cbCertEncoded));
+        if (x == nullptr) continue;
+        if (X509_STORE_add_cert(store, x) == 1) ++added;
+        X509_free(x);
+    }
+    CertCloseStore(sys, 0);
+    ERR_clear_error();   // duplicate certificates queue an error that is not one
+    return added;
+}
+#endif
 
 /// OpenSSL's own error text for the failure on top of the thread's queue.
 std::string sslError() {
@@ -143,6 +171,9 @@ HttpsResponse httpsGet(const std::string& host, const std::string& path,
         result.error = "no trust store: " + sslError();
         return result;
     }
+#ifdef _WIN32
+    loadWindowsRoots(ctx);
+#endif
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
 
     SSL* ssl = SSL_new(ctx);

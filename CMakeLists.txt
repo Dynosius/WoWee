@@ -1411,7 +1411,7 @@ if(WIN32)
     #
     # No SDL main library: SDL3 has none, its WinMain shim being header-only
     # in SDL_main.h, where SDL2 kept it in a separate SDL2main.
-    target_link_libraries(wowee PRIVATE ws2_32 winmm)
+    target_link_libraries(wowee PRIVATE ws2_32 winmm crypt32)
 endif()
 
 # Link ImGui if available
