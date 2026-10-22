@@ -33,7 +33,6 @@ public:
     using SpellIconFn = std::function<VkDescriptorSet(uint32_t spellId, pipeline::AssetManager*)>;
 
     // ---- Toggle booleans (written by slash commands / escape handler / settings) ----
-    bool showCombatLog_ = false;
     bool showThreatWindow_ = false;
 
     size_t raidWarnChatSeenCount_ = 0;
@@ -73,9 +72,6 @@ public:
         dpsMeterPos_ = ImVec2(x, y);
         dpsMeterUserPositioned_ = true;
     }
-    // inventoryScreen supplies the weapon item icons shown for temporary weapon enchants.
-    void renderCombatLog(game::GameHandler& gameHandler,
-                         SpellbookScreen& spellbookScreen);
     void renderThreatWindow(game::GameHandler& gameHandler);
 
     // UIServices injection (Phase B singleton breaking)

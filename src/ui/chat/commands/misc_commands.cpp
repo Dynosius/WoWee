@@ -200,7 +200,7 @@ public:
         return {};
     }
     [[nodiscard]] std::vector<std::string> aliases() const override { return {"combatlog", "cl"}; }
-    [[nodiscard]] std::string helpText() const override { return "Toggle combat log"; }
+    [[nodiscard]] std::string helpText() const override { return "Show the combat log tab"; }
 };
 
 // --- /helm, /helmet, /showhelm ---

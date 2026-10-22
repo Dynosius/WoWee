@@ -658,7 +658,8 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         if (cmds.showWho) {
             gameHandler.runInterfaceCommand("ToggleFriendsFrame(2)");
         }
-        if (cmds.toggleCombatLog) combatUI_.showCombatLog_ = !combatUI_.showCombatLog_;
+        // The combat log is a tab of the chat frame in FrameXML, not a window.
+        if (cmds.toggleCombatLog) gameHandler.runInterfaceCommand("FCF_SelectDockFrame(COMBATLOG)");
         if (cmds.takeScreenshot) takeScreenshot();
         switch (cmds.recording) {
             case ChatPanel::SlashCommands::Recording::Toggle: toggleRecording(); break;
@@ -699,7 +700,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // on this side, so handing social over left two of this client's three
     // windows drawing beside FrameXML's tabs.
     windowManager_.renderInstanceLockouts(gameHandler);
-    combatUI_.renderCombatLog(gameHandler, spellbookScreen);
     windowManager_.renderEquipSetWindow(gameHandler);
     combatUI_.renderThreatWindow(gameHandler);
     // The blips, whoever draws the ring around them.
