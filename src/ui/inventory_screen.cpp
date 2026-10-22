@@ -2,7 +2,6 @@
 #include "ui/ui_texture_load.hpp"
 #include "ui/ui_upload_budget.hpp"
 #include "ui/inventory_screen.hpp"
-#include "ui/item_tooltip.hpp"
 #include "audio/ui_sound_manager.hpp"
 #include "audio/audio_coordinator.hpp"
 #include "game/inventory_slots.hpp"
@@ -89,18 +88,6 @@ ImVec4 InventoryScreen::getQualityColor(game::ItemQuality quality) {
 // ============================================================
 // Item Icon Loading
 // ============================================================
-
-void InventoryScreen::renderItemTooltip(const game::ItemDef& item,
-                                       const game::Inventory* inventory,
-                                       uint64_t itemGuid) {
-    ui::renderItemTooltip(item, inventory, itemGuid, gameHandler_, assetManager_);
-}
-
-void InventoryScreen::renderItemTooltip(const game::ItemQueryResponseData& info,
-                                        const game::Inventory* inventory,
-                                        uint64_t itemGuid) {
-    ui::renderItemTooltip(info, inventory, itemGuid, gameHandler_, assetManager_);
-}
 
 VkDescriptorSet InventoryScreen::getItemIcon(uint32_t displayInfoId) {
     // The shared cache, so an item drawn here and on the action bar is

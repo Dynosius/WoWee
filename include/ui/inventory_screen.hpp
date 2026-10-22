@@ -74,8 +74,6 @@ private:
     // Item icon cache: displayInfoId -> GL texture
 public:
     VkDescriptorSet getItemIcon(uint32_t displayInfoId);
-    void renderItemTooltip(const game::ItemQueryResponseData& info, const game::Inventory* inventory = nullptr, uint64_t itemGuid = 0);
-    void renderItemTooltip(const game::ItemDef& item, const game::Inventory* inventory = nullptr, uint64_t itemGuid = 0);
 private:
 
     // Character model preview

@@ -2884,8 +2884,7 @@ static void appendRandomSuffix(wowee::ui::Widget* w, game::GameHandler* gh,
 /// tooltip. Both bag and paperdoll tooltips build from the item's template id
 /// - _WoweePopulateItemTooltip calls GetItemInfo, which knows nothing of any
 /// one instance - so this line, like the random suffix above, has to be
-/// appended from the instance separately. Colored the same way as the bag
-/// window's own durability line (item_tooltip.cpp), so the two agree.
+/// appended from the instance separately.
 static void appendDurabilityLine(wowee::ui::Widget* w, const game::ItemDef& item) {
     if (!w || item.maxDurability == 0) return;
     const float pct = static_cast<float>(item.curDurability) /

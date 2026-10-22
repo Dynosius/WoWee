@@ -1023,10 +1023,8 @@ set(WOWEE_SOURCES
     src/ui/chat/chat_bubble_manager.cpp
     src/ui/chat/chat_markup_parser.cpp
     src/ui/plural_escape.cpp
-    src/ui/chat/chat_markup_renderer.cpp
     src/core/open_url.cpp
     src/core/click_drag.cpp
-    src/ui/chat/item_tooltip_renderer.cpp
     src/ui/chat/chat_command_registry.cpp
     src/ui/chat/macro_evaluator.cpp
     src/ui/chat/macro_eval_convenience.cpp
@@ -1053,7 +1051,6 @@ set(WOWEE_SOURCES
     src/ui/window_manager.cpp
     src/ui/bis_gear_data.cpp
     src/ui/inventory_screen.cpp
-    src/ui/item_tooltip.cpp
     src/ui/spellbook_screen.cpp
     src/ui/keybinding_manager.cpp
 

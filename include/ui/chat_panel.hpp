@@ -6,7 +6,6 @@
 #include "ui/chat/chat_bubble_manager.hpp"
 #include "ui/chat/cast_sequence_tracker.hpp"
 #include "ui/chat/chat_markup_parser.hpp"
-#include "ui/chat/chat_markup_renderer.hpp"
 #include "ui/chat/chat_command_registry.hpp"
 #include <vulkan/vulkan.h>
 #include <imgui.h>
