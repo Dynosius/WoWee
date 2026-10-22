@@ -2206,6 +2206,10 @@ const std::deque<CombatLogEntry>& GameHandler::getCombatLog() const {
     return combatHandler_ ? combatHandler_->getCombatLog() : empty;
 }
 
+uint64_t GameHandler::getCombatLogAppended() const {
+    return combatHandler_ ? combatHandler_->getCombatLogAppended() : 0;
+}
+
 void GameHandler::clearCombatLog() {
     if (combatHandler_) combatHandler_->clearCombatLog();
 }

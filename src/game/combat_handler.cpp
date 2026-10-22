@@ -493,6 +493,7 @@ void CombatHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, ui
     if (combatLog_.size() >= MAX_COMBAT_LOG)
         combatLog_.pop_front();
     combatLog_.push_back(std::move(log));
+    ++combatLogAppended_;
 
     // The combat log's own events, in the layout Blizzard_CombatLog parses.
     // The unfiltered one is what addons listen for; the filtered one is what the

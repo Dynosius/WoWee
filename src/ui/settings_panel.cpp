@@ -1017,6 +1017,8 @@ constexpr FieldBinding kFieldBindings[] = {
     // --- Combat and HUD ---
     {.key = "nameplatescale",     .asFloat = &SettingsPanel::nameplateScale_},
     {.key = "dpsmeter",           .asBool  = &SettingsPanel::showDPSMeter_},
+    {.key = "dpsmeterleft",       .asFloat = &SettingsPanel::dpsMeterLeft_},
+    {.key = "dpsmetertop",        .asFloat = &SettingsPanel::dpsMeterTop_},
     {.key = "cooldowntracker",    .asBool  = &SettingsPanel::showCooldownTracker_},
     {.key = "raretracker",        .asBool  = &SettingsPanel::showRareTracker_},
     {.key = "chesttracker",       .asBool  = &SettingsPanel::showChestTracker_},

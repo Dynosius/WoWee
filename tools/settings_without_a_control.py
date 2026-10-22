@@ -28,6 +28,8 @@ KNOWN = {
     "shadows": "no control: turning shadows off loses the GPU (settings_schema.cpp)",
     "waterrefraction": "not a choice: the shoreline and underwater work assume it "
                        "(settings_schema.cpp)",
+    "dpsmeterleft": "set by dragging the damage meter (lua_engine.cpp)",
+    "dpsmetertop": "set by dragging the damage meter (lua_engine.cpp)",
 }
 
 # Floors, so a regex that stops matching reports an empty world rather than a

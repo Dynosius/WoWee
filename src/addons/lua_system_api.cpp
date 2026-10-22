@@ -1,5 +1,6 @@
 // lua_system_api.cpp - System, time, sound, locale, map, addons, instances, and utilities Lua API bindings.
 // Extracted from lua_engine.cpp as part of §5.1 (Tame LuaEngine).
+#include "game/damage_meter.hpp"
 #include <array>
 #include <algorithm>
 #include <cctype>
@@ -4812,6 +4813,61 @@ static int lua_WoweeGetSetting(lua_State* L) {
     return luaReturnNil(L);
 }
 
+// WoweeActiveCooldowns() - the player's spells still cooling down, longest
+// first, as { spellId, name, remaining, icon }. The cooldown tracker's rows.
+// Anything under half a second is the global cooldown and left out, and so is
+// a spell with no name, which is an internal or passive one.
+static int lua_WoweeActiveCooldowns(lua_State* L) {
+    auto* gh = getGameHandler(L);
+    lua_newtable(L);
+    if (!gh) return 1;
+    std::vector<std::pair<uint32_t, float>> active;
+    for (const auto& [spellId, remaining] : gh->getSpellCooldowns()) {
+        if (remaining > 0.5f) active.emplace_back(spellId, remaining);
+    }
+    std::sort(active.begin(), active.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    int index = 0;
+    for (const auto& [spellId, remaining] : active) {
+        const std::string& name = gh->getSpellName(spellId);
+        if (name.empty()) continue;
+        lua_newtable(L);
+        lua_pushnumber(L, spellId);           lua_setfield(L, -2, "spellId");
+        lua_pushstring(L, name.c_str());      lua_setfield(L, -2, "name");
+        lua_pushnumber(L, remaining);         lua_setfield(L, -2, "remaining");
+        const std::string icon = gh->getSpellIconPath(spellId);
+        if (!icon.empty()) { lua_pushstring(L, icon.c_str()); lua_setfield(L, -2, "icon"); }
+        lua_rawseti(L, -2, ++index);
+    }
+    return 1;
+}
+
+// WoweeDamageMeter(elapsed) -> dps, hps, encounterDps, encounterHps, inCombat, show
+//
+// Advances the meter by `elapsed` seconds and answers what it reads. Called
+// from the meter frame's OnUpdate, which is the one clock it runs on; the fight
+// totals live here between calls. See game::DamageMeter.
+static int lua_WoweeDamageMeter(lua_State* L) {
+    static game::DamageMeter meter;
+    auto* gh = getGameHandler(L);
+    if (!gh || gh->getState() != game::WorldState::IN_WORLD) {
+        for (int i = 0; i < 4; ++i) lua_pushnumber(L, 0);
+        lua_pushboolean(L, 0);
+        lua_pushboolean(L, 0);
+        return 6;
+    }
+    const float dt = static_cast<float>(luaL_optnumber(L, 1, 0.0));
+    const auto r = meter.update(gh->isInCombat(), dt, gh->getCombatLog(),
+                                gh->getCombatLogAppended(), gh->getCombatText());
+    lua_pushnumber(L, r.dps);
+    lua_pushnumber(L, r.hps);
+    lua_pushnumber(L, r.encounterDps);
+    lua_pushnumber(L, r.encounterHps);
+    lua_pushboolean(L, r.inCombat ? 1 : 0);
+    lua_pushboolean(L, r.show ? 1 : 0);
+    return 6;
+}
+
 static int lua_WoweeSetSetting(lua_State* L) {
     const char* key = luaL_checkstring(L, 1);
     std::string value;
@@ -5203,6 +5259,8 @@ void registerSystemLuaAPI(lua_State* L) {
                 {"WoweeOpenURL",             lua_WoweeOpenURL},
                 {"WoweeGetSetting",          lua_WoweeGetSetting},
                 {"WoweeSetSetting",          lua_WoweeSetSetting},
+                {"WoweeActiveCooldowns",     lua_WoweeActiveCooldowns},
+                {"WoweeDamageMeter",         lua_WoweeDamageMeter},
                 {"WoweeSaveVariables",       lua_WoweeSaveVariables},
                 {"HasLFGRestrictions",       lua_HasLFGRestrictions},
                 {"GetLFGProposal",           lua_GetLFGProposal},

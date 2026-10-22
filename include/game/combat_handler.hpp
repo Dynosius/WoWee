@@ -49,6 +49,9 @@ public:
 
     // Combat log (persistent rolling history)
     [[nodiscard]] const std::deque<CombatLogEntry>& getCombatLog() const { return combatLog_; }
+    /// How many entries the log has ever been given. It holds the last 500, so
+    /// this, not its size, says how many arrived since a reader last looked.
+    [[nodiscard]] uint64_t getCombatLogAppended() const { return combatLogAppended_; }
     void clearCombatLog() { combatLog_.clear(); }
 
     // Threat
@@ -210,6 +213,7 @@ private:
     std::vector<CombatTextEntry> combatText_;
     static constexpr size_t MAX_COMBAT_LOG = 500;
     std::deque<CombatLogEntry> combatLog_;
+    uint64_t combatLogAppended_ = 0;
 
     struct RecentSpellstealLogEntry {
         uint64_t casterGuid = 0;

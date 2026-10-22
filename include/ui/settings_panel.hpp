@@ -287,6 +287,11 @@ public:
     bool showFriendlyNameplates_ = true;  // Shift+V toggles friendly player nameplates
     bool showEnemyNameplates_ = true;     // V toggles nameplates over hostile and neutral units
     bool showDPSMeter_ = false;
+    /// Where the meter was dragged to: its left and top edges in interface
+    /// units from the screen's bottom-left. Negative until it has been moved,
+    /// which leaves it in its default place.
+    float dpsMeterLeft_ = -1.0f;
+    float dpsMeterTop_ = -1.0f;
     bool showCooldownTracker_ = false;
     bool showRareTracker_ = false;  // Mark nearby spawned rares/rare-elites on both maps
     bool showMapWindow_ = false;    // The world map on a window of its own (Application::updateMapWindow)

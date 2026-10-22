@@ -1235,6 +1235,17 @@ target_link_libraries(test_combat_log_event PRIVATE catch2_main)
 add_test(NAME combat_log_event COMMAND test_combat_log_event)
 register_test_target(test_combat_log_event)
 
+# ── test_damage_meter ────────────────────────────────────────
+add_executable(test_damage_meter
+    test_damage_meter.cpp
+    ${TEST_COMMON_SOURCES}
+)
+target_include_directories(test_damage_meter PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_damage_meter SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_damage_meter PRIVATE catch2_main)
+add_test(NAME damage_meter COMMAND test_damage_meter)
+register_test_target(test_damage_meter)
+
 # ── test_combat_fsm ──────────────────────────────────────────
 add_executable(test_combat_fsm
     test_combat_fsm.cpp

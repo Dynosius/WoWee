@@ -677,8 +677,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     reportRecordingFailure();
 
     // ---- New UI elements ----
-    auto spellIconFn = [this](uint32_t id, pipeline::AssetManager* am) { return getSpellIcon(id, am); };
-    combatUI_.renderCooldownTracker(gameHandler, settingsPanel_, spellIconFn);
     renderNameplates(gameHandler);  // player names always shown; NPC plates gated by the enemyplates row
     combatUI_.playSoundsForNewChat(gameHandler);
     // Blizzard_CombatText draws its own once it is loaded, which happens the
@@ -698,7 +696,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // No target frame of ours to park under any more, so the meter takes its
     // own position. FrameXML's TargetFrame has one, and could be measured the
     // way the minimap measures MinimapCluster, but nothing reads it yet.
-    combatUI_.renderDPSMeter(gameHandler, settingsPanel_, -1.0f);
     combatUI_.renderCombatLog(gameHandler, spellbookScreen);
     // FriendsFrame is what "social" suppresses, and its tabs are the friends
     // list, the who list and the guild roster. Only the friends list was gated
