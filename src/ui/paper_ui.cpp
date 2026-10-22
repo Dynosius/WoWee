@@ -88,6 +88,8 @@ void PaperUI::begin(float deltaSeconds, float scale) {
     textInputWanted_ = false;
     mouseWanted_ = false;
     popups_.clear();
+    scrolls_.clear();
+    hitClip_ = false;
     firstField_ = lastField_ = 0;
     takeFocusNext_ = false;
     focusLastAtEnd_ = false;
@@ -178,8 +180,12 @@ bool PaperUI::pressed() const {
 
 bool PaperUI::hovered(ImVec2 a, ImVec2 b) {
     const ImVec2 m = ImGui::GetIO().MousePos;
+    if (hitClip_ && !(m.x >= hitA_.x && m.x < hitB_.x && m.y >= hitA_.y && m.y < hitB_.y))
+        return false;
     return m.x >= a.x && m.x < b.x && m.y >= a.y && m.y < b.y;
 }
+
+ImVec2 PaperUI::screenSize() const { return ImGui::GetIO().DisplaySize; }
 
 PaperUI::FieldState& PaperUI::fieldState(ImU32 id) {
     for (auto& entry : fieldStates_)
@@ -1015,10 +1021,18 @@ PaperUI::ListResult PaperUI::list(const char* idStr, ImVec2 a, ImVec2 b, int row
     }
     dl_->PopClipRect();
 
-    if (maxScroll <= 0.0f) return out;
+    scrollMark(id, a, b, state, contentH);
+    return out;
+}
+
+void PaperUI::scrollMark(ImU32 id, ImVec2 a, ImVec2 b, FieldState& state, float contentH) {
+    const float viewH = std::max(b.y - a.y, 1.0f);
+    const float maxScroll = std::max(0.0f, contentH - viewH);
+    if (maxScroll <= 0.0f) return;
 
     // The mark in the margin, and the ability to drag it - a list too long to
     // fit is otherwise reachable only by a wheel not every pointer has.
+    const bool live = listening();
     const float trackX = b.x - px(6);
     const float trackTop = a.y + px(4);
     const float trackBottom = b.y - px(4);
@@ -1041,7 +1055,112 @@ PaperUI::ListResult PaperUI::list(const char* idStr, ImVec2 a, ImVec2 b, int row
     dl_->AddRectFilled(ImVec2(trackX - px(2.5f), thumbY),
                        ImVec2(trackX + px(2.5f), thumbY + thumbH),
                        paperFade(theme_.crayonRed, 0.8f), px(2.5f));
-    return out;
+}
+
+float PaperUI::beginScroll(const char* idStr, ImVec2 a, ImVec2 b, bool stickToBottom) {
+    const ImU32 id = hashId(idStr);
+    FieldState& state = fieldState(id);
+    const float viewH = std::max(b.y - a.y, 1.0f);
+    const float maxScroll = std::max(0.0f, state.contentH - viewH);
+
+    if (listening() && hovered(a, b)) {
+        const float wheel = ImGui::GetIO().MouseWheel;
+        if (wheel != 0.0f) state.scrollY -= wheel * px(40);
+    }
+    // Following the end only while somebody is reading the end: scrolled up
+    // to look at something earlier, it stays where they put it.
+    if (stickToBottom && state.scrollY >= state.lastMax - px(1)) state.scrollY = maxScroll;
+    state.scrollY = std::clamp(state.scrollY, 0.0f, maxScroll);
+    state.lastMax = maxScroll;
+
+    ScrollFrame frame;
+    frame.id = id;
+    frame.a = a;
+    frame.b = b;
+    frame.top = a.y - state.scrollY;
+    frame.hadHitClip = hitClip_;
+    frame.hitA = hitA_;
+    frame.hitB = hitB_;
+    scrolls_.push_back(frame);
+
+    // What the region shows, narrowed by any region it sits inside.
+    ImVec2 ca = a;
+    ImVec2 cb = b;
+    if (hitClip_) {
+        ca = ImVec2(std::max(ca.x, hitA_.x), std::max(ca.y, hitA_.y));
+        cb = ImVec2(std::min(cb.x, hitB_.x), std::min(cb.y, hitB_.y));
+    }
+    hitClip_ = true;
+    hitA_ = ca;
+    hitB_ = cb;
+    dl_->PushClipRect(a, b, true);
+    return frame.top;
+}
+
+void PaperUI::endScroll(float contentBottom) {
+    if (scrolls_.empty()) return;
+    const ScrollFrame frame = scrolls_.back();
+    scrolls_.pop_back();
+    dl_->PopClipRect();
+    hitClip_ = frame.hadHitClip;
+    hitA_ = frame.hitA;
+    hitB_ = frame.hitB;
+
+    FieldState& state = fieldState(frame.id);
+    state.contentH = std::max(0.0f, contentBottom - frame.top);
+    scrollMark(frame.id, frame.a, frame.b, state, state.contentH);
+}
+
+bool PaperUI::radio(const char* idStr, ImVec2 at, float boxSize, const char* label,
+                    bool selected, bool enabled) {
+    const ImU32 id = hashId(idStr);
+    const float size = boxSize * 0.78f;
+    const float labelW = textWidth(label, size);
+    const ImVec2 a = at;
+    const ImVec2 b(at.x + boxSize + (labelW > 0.0f ? px(9) + labelW : 0.0f), at.y + boxSize);
+
+    const bool live = listening() && enabled;
+    const bool over = live && hovered(a, b);
+    if (over) mouseWanted_ = true;
+
+    bool chosen = false;
+    if (over && pressed()) active_ = id;
+    if (active_ == id && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        chosen = over && !selected;
+        active_ = 0;
+    }
+
+    // A ring drawn by hand rather than a box, which is what says "one of".
+    const ImVec2 c(a.x + boxSize * 0.5f, a.y + boxSize * 0.5f);
+    const float r = boxSize * 0.5f;
+    dl_->AddCircleFilled(c, r, paperFade(theme_.fieldFill, over ? 1.0f : 0.7f));
+    const ImU32 ring = !enabled ? paperFade(theme_.pencil, 0.6f)
+                     : over     ? theme_.ink
+                                : paperFade(theme_.pencil, 0.95f);
+    dl_->AddCircle(c, r, ring, 0, px(1.3f));
+    if (selected) dl_->AddCircleFilled(c, r * 0.48f, enabled ? theme_.crayonRed : theme_.pencil);
+    if (label && *label) {
+        const ImU32 col = !enabled ? theme_.pencil : (over || selected) ? theme_.ink : theme_.inkSoft;
+        text(ImVec2(a.x + boxSize + px(9), a.y + (boxSize - size) * 0.5f - px(1)), label, size, col);
+    }
+    return chosen;
+}
+
+void PaperUI::frame(ImVec2 a, ImVec2 b) {
+    dl_->AddRectFilled(a, b, paperFade(theme_.fieldFill, 0.6f), px(3));
+    wobblyRect(dl_, a, b, paperFade(theme_.pencil, 0.8f), px(1.1f), px(0.8f), seedFor(a, b));
+}
+
+void PaperUI::progress(ImVec2 a, ImVec2 b, float fraction) {
+    const float t = std::clamp(fraction, 0.0f, 1.0f);
+    dl_->AddRectFilled(a, b, paperFade(theme_.fieldFill, 0.8f), px(3));
+    if (t > 0.0f) {
+        // Coloured in, the way a bar on a form would be filled with a crayon.
+        dl_->AddRectFilled(ImVec2(a.x + px(2), a.y + px(2)),
+                           ImVec2(a.x + px(2) + (b.x - a.x - px(4)) * t, b.y - px(2)),
+                           paperFade(theme_.crayonBlue, 0.7f), px(2));
+    }
+    wobblyRect(dl_, a, b, paperFade(theme_.pencil, 0.95f), px(1.2f), px(0.8f), seedFor(a, b));
 }
 
 // ---------------------------------------------------------------------------
@@ -1139,14 +1258,14 @@ bool PaperUI::dropdown(const char* idStr, ImVec2 a, ImVec2 b, const std::string&
 // ---------------------------------------------------------------------------
 
 bool PaperUI::checkbox(const char* idStr, ImVec2 at, float boxSize, const char* label,
-                       bool* value) {
+                       bool* value, bool enabled) {
     const ImU32 id = hashId(idStr);
     const float size = boxSize * 0.78f;
     const float labelW = textWidth(label, size);
     const ImVec2 a = at;
     const ImVec2 b(at.x + boxSize + (labelW > 0.0f ? px(9) + labelW : 0.0f), at.y + boxSize);
 
-    const bool live = listening();
+    const bool live = listening() && enabled;
     const bool over = live && hovered(a, b);
     if (over) mouseWanted_ = true;
 
@@ -1163,7 +1282,8 @@ bool PaperUI::checkbox(const char* idStr, ImVec2 at, float boxSize, const char* 
     const ImVec2 boxA = a;
     const ImVec2 boxB(a.x + boxSize, a.y + boxSize);
     dl_->AddRectFilled(boxA, boxB, paperFade(theme_.fieldFill, over ? 1.0f : 0.7f), px(2));
-    wobblyRect(dl_, boxA, boxB, over ? theme_.ink : paperFade(theme_.pencil, 0.95f), px(1.3f),
+    wobblyRect(dl_, boxA, boxB,
+               over ? theme_.ink : paperFade(theme_.pencil, enabled ? 0.95f : 0.6f), px(1.3f),
                px(0.8f), seedFor(boxA, boxB));
     if (value && *value) {
         // A tick that runs slightly outside its box, as a pen does.
@@ -1173,12 +1293,13 @@ bool PaperUI::checkbox(const char* idStr, ImVec2 at, float boxSize, const char* 
         const float y1 = boxA.y + boxSize * 0.76f;
         const float x2 = boxA.x + boxSize * 0.92f;
         const float y2 = boxA.y + boxSize * 0.14f;
-        dl_->AddLine(ImVec2(x0, y0), ImVec2(x1, y1), theme_.crayonRed, px(2.1f));
-        dl_->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), theme_.crayonRed, px(2.1f));
+        const ImU32 tick = enabled ? theme_.crayonRed : theme_.pencil;
+        dl_->AddLine(ImVec2(x0, y0), ImVec2(x1, y1), tick, px(2.1f));
+        dl_->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), tick, px(2.1f));
     }
     if (label && *label) {
         text(ImVec2(boxB.x + px(9), a.y + (boxSize - size) * 0.5f - px(1)), label, size,
-             over ? theme_.ink : theme_.inkSoft);
+             !enabled ? theme_.pencil : over ? theme_.ink : theme_.inkSoft);
     }
     return changed;
 }

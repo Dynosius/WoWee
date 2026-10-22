@@ -17,6 +17,8 @@
 #include <string>
 #include <vector>
 
+namespace wowee::ui { class PaperUI; }
+
 namespace wowee::assets {
 
 /// What is being chosen.
@@ -48,8 +50,9 @@ public:
 
     [[nodiscard]] bool isOpen() const { return open_; }
 
-    /// One frame. True once, on the frame the choice is made.
-    bool draw(std::string* chosen);
+    /// One frame, drawn over everything else with `ui`'s controls. True
+    /// once, on the frame the choice is made.
+    bool draw(ui::PaperUI& ui, std::string* chosen);
 
 private:
     void listHere();
@@ -79,7 +82,11 @@ public:
     bool ask(PickWhat what, const std::string& title, const std::string& startAt,
              const std::string& extension, std::string* chosen);
 
-    bool draw(std::string* chosen) { return browser_.draw(chosen); }
+    bool draw(ui::PaperUI& ui, std::string* chosen) { return browser_.draw(ui, chosen); }
+
+    /// Whether the in-window browser is up, so what is under it can stop
+    /// listening while it is.
+    [[nodiscard]] bool isOpen() const { return browser_.isOpen(); }
 
 private:
     Browser browser_;

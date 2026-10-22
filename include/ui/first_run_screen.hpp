@@ -14,6 +14,7 @@
 #ifdef WOWEE_HAVE_ASSET_PANEL
 
 #include "panel.hpp"
+#include "ui/paper_ui.hpp"
 
 namespace wowee::ui {
 
@@ -27,6 +28,7 @@ public:
 
 private:
     assets::App app_;
+    PaperUI ui_;
 };
 
 }  // namespace wowee::ui

@@ -1853,9 +1853,9 @@ endif()
 
 # ---- Tool: wowee_assets (the asset manager window) ----
 #
-# A native window for building this client's assets: SDL3 and Dear ImGui, both
-# of which the client already carries, and Extractor::run called in this
-# process. It replaces a Tkinter window that drove shell scripts that drove
+# A native window for building this client's assets: SDL3, the client's own
+# paper controls - the login screen's - drawn through ImGui's draw lists, and
+# Extractor::run called in this process. It replaces a Tkinter window that drove shell scripts that drove
 # Python scripts - a chain where every link was a thing to have installed, and
 # where a `python3` without Tkinter meant the window simply did not appear.
 #
@@ -1898,6 +1898,10 @@ if(STORMLIB_LIBRARY AND STORMLIB_INCLUDE_DIR AND SDL3_FOUND AND EXISTS ${IMGUI_D
         tools/asset_manager/model_import.cpp
         tools/asset_manager/model_source.cpp
         tools/asset_manager/folder_picker.cpp
+        # The client's paper controls, which the panel is drawn with.
+        src/ui/paper_ui.cpp
+        src/ui/text_edit.cpp
+        src/ui/interface_fonts.cpp
         src/pipeline/asset_inventory.cpp
         src/rendering/m2_model_classifier.cpp
         tools/asset_extract/extractor.cpp
@@ -1961,7 +1965,7 @@ endif()
 # through are the ones that need assets, so they can type an account and
 # nothing happens. The program that fixes that was a separate executable they
 # had to know to go and find. The client carries it now, drawn from the same
-# panel.cpp the window draws, through its own Vulkan-backed ImGui.
+# panel.cpp the window draws, with the same paper controls as its login card.
 #
 # Gated on what the window is gated on. Without StormLib there is nothing to
 # extract with, and a client built without it should still be a client - the

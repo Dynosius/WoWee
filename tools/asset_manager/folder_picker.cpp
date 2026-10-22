@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <cstdlib>
 
-#include "imgui.h"
+#include "ui/paper_ui.hpp"
 
 namespace wowee::assets {
 namespace {
@@ -73,88 +73,95 @@ void Browser::listHere() {
     });
 }
 
-bool Browser::draw(std::string* chosen) {
+bool Browser::draw(ui::PaperUI& ui, std::string* chosen) {
     if (!open_) return false;
 
+    // Over everything, on a dimmed page: a card of its own in the middle of
+    // the window, sized to it so a deep folder has room to be read.
+    ui.setLayer(ui::PaperLayer::Overlay);
+    ui.scrim(0.35f);
+    const ImVec2 screen = ui.screenSize();
+    const ImVec2 a(screen.x * 0.1f, screen.y * 0.13f);
+    const ImVec2 b(screen.x * 0.9f, screen.y * 0.87f);
+    ui.sheet(a, b, false);
+    ui.claimMouse(a, b);
+
+    const ui::PaperTheme& theme = ui.theme();
+    const float pad = ui.px(30);
+    const float x0 = a.x + pad;
+    const float x1 = b.x - pad;
+    float y = a.y + ui.px(24);
+
+    const float titleSize = ui.px(21);
+    ui.text(ImVec2(x0, y), title_.c_str(), titleSize, theme.ink, true);
+    y += ui.inkHeight(titleSize, true) + ui.px(10);
+
+    const float row = ui.px(32);
+    const fs::path up = fs::path(here_).parent_path();
+    const bool canGoUp = !up.empty() && up != fs::path(here_);
+    const float upW = ui.textWidth("Up", row * 0.44f) + ui.px(40);
+    if (ui.button("browser.up", ImVec2(x0, y), ImVec2(x0 + upW, y + row), "Up",
+                  ui::PaperUI::ButtonKind::Quiet, canGoUp)) {
+        here_ = up.string();
+        listHere();
+    }
+    // Where this is, beside the way out of it, and what went wrong reading it.
+    const float pathSize = ui.px(14);
+    const std::string where = error_.empty() ? here_ : here_ + "   - " + error_;
+    ui.text(ImVec2(x0 + upW + ui.px(12), y + (row - pathSize) * 0.5f - ui.px(1)), where.c_str(),
+            pathSize, error_.empty() ? theme.inkSoft : theme.crayonRed);
+    y += row + ui.px(10);
+
     bool decided = false;
-    ImGui::OpenPopup(title_.c_str());
-
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x * 0.8f, viewport->WorkSize.y * 0.7f),
-                             ImGuiCond_Appearing);
-
-    if (ImGui::BeginPopupModal(title_.c_str(), nullptr, ImGuiWindowFlags_NoSavedSettings)) {
-        ImGui::TextUnformatted(here_.c_str());
-
-        const fs::path up = fs::path(here_).parent_path();
-        ImGui::BeginDisabled(up.empty() || up == fs::path(here_));
-        if (ImGui::Button("Up")) {
-            here_ = up.string();
+    const float listBottom = b.y - pad - row - ui.px(12);
+    const float entrySize = ui.px(15);
+    const ui::PaperUI::ListResult picked = ui.list(
+        "browser.entries", ImVec2(x0, y), ImVec2(x1, listBottom),
+        static_cast<int>(entries_.size()), ui.px(26), selected_,
+        [&](int i, ImVec2 ra, ImVec2 rb, bool, bool) {
+            const Entry& entry = entries_[static_cast<std::size_t>(i)];
+            const std::string label = entry.directory ? entry.name + "/" : entry.name;
+            ui.text(ImVec2(ra.x + ui.px(10), ra.y + ((rb.y - ra.y) - entrySize) * 0.5f - ui.px(1)),
+                    label.c_str(), entrySize, entry.directory ? theme.ink : theme.inkSoft);
+        });
+    if (picked.clicked >= 0) selected_ = picked.clicked;
+    if (picked.activated >= 0) {
+        const Entry& entry = entries_[static_cast<std::size_t>(picked.activated)];
+        if (entry.directory) {
+            here_ = (fs::path(here_) / entry.name).string();
             listHere();
-        }
-        ImGui::EndDisabled();
-
-        if (!error_.empty()) {
-            ImGui::SameLine();
-            ImGui::TextUnformatted(error_.c_str());
-        }
-
-        const float buttons = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
-        if (ImGui::BeginChild("entries", ImVec2(0.0f, -buttons), ImGuiChildFlags_Borders)) {
-            for (int i = 0; i < int(entries_.size()); ++i) {
-                const Entry& entry = entries_[i];
-                const std::string label = entry.directory ? entry.name + "/" : entry.name;
-                if (ImGui::Selectable(label.c_str(), selected_ == i,
-                                      ImGuiSelectableFlags_AllowDoubleClick)) {
-                    selected_ = i;
-                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        if (entry.directory) {
-                            here_ = (fs::path(here_) / entry.name).string();
-                            listHere();
-                            break;
-                        }
-                        if (chosen != nullptr) {
-                            *chosen = (fs::path(here_) / entry.name).string();
-                        }
-                        decided = true;
-                    }
-                }
-            }
-        }
-        ImGui::EndChild();
-
-        // A folder is chosen by being in it, which is how every system chooser
-        // does it too: there is no selecting the folder you are looking at from
-        // a list that does not contain it.
-        const bool canChoose =
-            what_ == PickWhat::Folder ||
-            (selected_ >= 0 && selected_ < int(entries_.size()) && !entries_[selected_].directory);
-
-        ImGui::BeginDisabled(!canChoose);
-        const char* verb = what_ == PickWhat::Folder ? "Use this folder" : "Open";
-        if (ImGui::Button(verb) && canChoose) {
-            if (chosen != nullptr) {
-                *chosen = what_ == PickWhat::Folder
-                              ? here_
-                              : (fs::path(here_) / entries_[selected_].name).string();
-            }
+        } else {
+            if (chosen != nullptr) *chosen = (fs::path(here_) / entry.name).string();
             decided = true;
         }
-        ImGui::EndDisabled();
-
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel")) {
-            open_ = false;
-            ImGui::CloseCurrentPopup();
-        }
-
-        if (decided) {
-            open_ = false;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
     }
+
+    // A folder is chosen by being in it, which is how every system chooser
+    // does it too: there is no selecting the folder you are looking at from
+    // a list that does not contain it.
+    const bool canChoose =
+        what_ == PickWhat::Folder ||
+        (selected_ >= 0 && selected_ < int(entries_.size()) && !entries_[selected_].directory);
+    const char* verb = what_ == PickWhat::Folder ? "Use this folder" : "Open";
+    const float by = b.y - pad - row;
+    const float verbW = ui.textWidth(verb, row * 0.44f) + ui.px(48);
+    const float cancelW = ui.textWidth("Cancel", row * 0.44f) + ui.px(48);
+    if (ui.button("browser.choose", ImVec2(x1 - verbW, by), ImVec2(x1, by + row), verb,
+                  ui::PaperUI::ButtonKind::Primary, canChoose) && !decided) {
+        if (chosen != nullptr) {
+            *chosen = what_ == PickWhat::Folder
+                          ? here_
+                          : (fs::path(here_) / entries_[selected_].name).string();
+        }
+        decided = true;
+    }
+    if (ui.button("browser.cancel", ImVec2(x1 - verbW - ui.px(12) - cancelW, by),
+                  ImVec2(x1 - verbW - ui.px(12), by + row), "Cancel")) {
+        open_ = false;
+    }
+
+    ui.setLayer(ui::PaperLayer::Page);
+    if (decided) open_ = false;
     return decided;
 }
 

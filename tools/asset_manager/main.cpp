@@ -12,8 +12,8 @@
 /// directory away and nothing said so. A tool that installs the game's assets
 /// should not itself need an install.
 ///
-/// It uses SDL3 and Dear ImGui, both of which the client already carries, and
-/// calls Extractor::run in this process. Nothing is shelled out to.
+/// It is drawn with the client's own paper controls - the login screen's - over
+/// SDL3, and calls Extractor::run in this process. Nothing is shelled out to.
 
 #include <SDL3/SDL.h>
 
@@ -37,9 +37,8 @@
 #include "stb_image_write.h"
 
 #include "core/data_paths.hpp"
-#include "pipeline/asset_inventory.hpp"
-#include "core/local_time.hpp"
-#include "ui/imgui_theme.hpp"
+#include "ui/interface_fonts.hpp"
+#include "ui/paper_ui.hpp"
 
 #include "casc.hpp"
 #include "pack.hpp"
@@ -109,20 +108,19 @@ int runImportLater(const std::string& laterInstall, const std::string& dataDir,
     return 0;
 }
 
-/// ImGui's built-in face is drawn at thirteen pixels. Everything the panel
-/// lays out was sized against that, so it is the height the atlas is scaled
-/// from rather than a size worth changing.
-constexpr float kBaseFontSize = 13.0f;
+/// The size the window's faces are added at. Text is drawn at whatever size
+/// each line asks for and rasterised at that size, so this only seeds the atlas.
+constexpr float kFaceSize = 16.0f;
 
-/// FRIZQT draws smaller than ImGui's built-in face at the same nominal height,
-/// so asking for thirteen of it puts noticeably smaller text into controls
-/// sized for thirteen. This is the height that matches.
-constexpr float kFrizqtRatio = 1.25f;
+/// The window the panel was laid out against. The paper scales with the
+/// window from here, so a bigger window is bigger writing rather than a
+/// wider margin.
+constexpr float kDesignWidth = 980.0f;
+constexpr float kDesignHeight = 900.0f;
 
-/// How many frames to let settle before the picture is taken. ImGui sizes a
-/// good deal of its layout from what it measured last frame, and hides a window
-/// outright for its first frame or two while it fits itself, so an early one
-/// is not what the window looks like.
+/// How many frames to let settle before the picture is taken. A scroll region
+/// learns how tall its contents are from the frame before, so the first one
+/// or two are not what the window looks like.
 constexpr int kShotFrame = 8;
 
 /// The renderer's own pixels, as a PNG.
@@ -157,14 +155,15 @@ void writeScreenshot(SDL_Renderer* renderer, const char* path) {
     std::printf("wrote %s (%dx%d)\n", path, width, height);
 }
 
-/// The game's own typeface, if any extraction on this machine has produced it.
+/// One of the game's own typefaces, if any extraction on this machine has
+/// produced it.
 ///
 /// A window that installs the game's assets should look like the game, and the
 /// face is most of that. It is looked for where the client itself reads from
 /// and beside whatever this window is writing to - which covers the common case
 /// of running this a second time, to add something to a tree already built.
-/// Before any extraction there is nothing to find, and ImGui's built-in face is
-/// what the layout was measured against anyway.
+/// Before any extraction there is nothing to find, and the paper is written in
+/// the fallback face until there is.
 fs::path gameFont(const std::string& outputDir, const char* name) {
     std::vector<fs::path> roots;
     if (!outputDir.empty()) roots.emplace_back(outputDir);
@@ -223,7 +222,7 @@ int main(int argc, char** argv) {
     if (argc > 2 && std::strcmp(argv[1], "--import-later") == 0) {
         App defaults;
         initPanelDefaults(defaults);
-        return runImportLater(argv[2], argc > 3 ? argv[3] : defaults.outputDir,
+        return runImportLater(argv[2], argc > 3 ? argv[3] : defaults.outputDir.text(),
                               argc > 4 ? argv[4] : "wotlk");
     }
     // SDL3 answers true on success where SDL2 answered 0: this test is
@@ -267,55 +266,48 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // ImGui is underneath the paper as its drawing and input layer only: the
+    // draw lists, the glyph atlas and SDL's events. Nothing here is one of
+    // its windows or widgets.
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    wowee::ui::applyWoweeStyle(ImGui::GetStyle());
-
-    // On a Retina display the window is 900 points wide and the thing drawn
-    // into is 1800 pixels. SDL_Renderer does not bridge that on its own, so
-    // without this the interface is drawn at point coordinates into a pixel
-    // buffer: half size, in the top-left quarter of its own window, with the
-    // rest left empty.
-    //
-    // The renderer is told to scale, which puts the layout back where it
-    // belongs. The font atlas is then built at the pixel size it will actually
-    // occupy and laid out as though it were half that, so the glyphs land one
-    // texel to a pixel rather than being magnified along with everything else.
-    const float scale = displayScale(window, renderer);
     ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
 
     App app;
     // Where the client itself looks when nobody has said otherwise. Data/ beside
-    // the terminal's working directory was eight minutes of extraction the
-    // client would never find, with nothing on screen saying where it went.
+    // the terminal's working directory was eight minutes of extraction the client
+    // would never find, with nothing on screen saying where it went.
     initPanelDefaults(app);
 
     // The same folders the window takes by drag and drop, for anyone who
     // already has the paths in a terminal.
-    if (argc > 1) std::snprintf(app.gameDir, sizeof(app.gameDir), "%s", argv[1]);
-    if (argc > 2) std::snprintf(app.secondDir, sizeof(app.secondDir), "%s", argv[2]);
-    if (argc > 3) std::snprintf(app.outputDir, sizeof(app.outputDir), "%s", argv[3]);
+    if (argc > 1) app.gameDir.setText(argv[1]);
+    if (argc > 2) app.secondDir.setText(argv[2]);
+    if (argc > 3) app.outputDir.setText(argv[3]);
 
-    // FRIZQT is what the game writes its interface in. A little larger than
-    // ImGui's built-in face at the same nominal height, so it is asked for at a
-    // size that keeps the controls around it the size they were laid out at.
-    const fs::path face = gameFont(app.outputDir, "frizqt__.ttf");
-    if (!face.empty()) {
+    // FRIZQT for writing and MORPHEUS for headings, as on the login card,
+    // registered under the names the paper asks for. Each is drawn at its em
+    // size, as the client draws them, and rasterised for the display it is on
+    // - ImGui takes that from the window's own pixel density.
+    for (const char* name : {"frizqt__.ttf", "morpheus.ttf"}) {
+        const fs::path face = gameFont(app.outputDir.text(), name);
+        if (face.empty()) continue;
         ImFontConfig config;
-        config.SizePixels = kBaseFontSize * kFrizqtRatio * scale;
-        io.Fonts->AddFontFromFileTTF(face.string().c_str(), config.SizePixels);
-    } else if (scale > 1.0f) {
-        ImFontConfig config;
-        config.SizePixels = kBaseFontSize * scale;
-        io.Fonts->AddFontDefault(&config);
+        config.ExtraSizeScale = wowee::ui::fontEmSizeScaleOfFile(face.string());
+        config.RasterizerMultiply = 1.35f;
+        if (ImFont* font = io.Fonts->AddFontFromFileTTF(face.string().c_str(), kFaceSize, &config)) {
+            wowee::ui::registerInterfaceFace(name, font);
+        }
     }
-    io.FontGlobalScale = 1.0f / scale;
+    if (io.Fonts->Fonts.Size == 0) io.Fonts->AddFontDefault();
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
 
     rescan(app);
 
+    wowee::ui::PaperUI paper;
     const char* shotPath = std::getenv("WOWEE_ASSETS_SCREENSHOT");
     int frames = 0;
 
@@ -332,7 +324,7 @@ int main(int argc, char** argv) {
             // SDL3 owns the dropped string and frees it after the event, so
             // it is copied rather than taken.
             if (event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr) {
-                std::snprintf(app.gameDir, sizeof(app.gameDir), "%s", event.drop.data);
+                app.gameDir.setText(event.drop.data);
                 rescan(app);
             }
         }
@@ -341,33 +333,51 @@ int main(int argc, char** argv) {
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);
-        ImGui::SetNextWindowSize(viewport->WorkSize);
-        ImGui::Begin("WoWee Asset Manager", nullptr,
-                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                     ImGuiWindowFlags_NoBringToFrontOnFocus);
+        const ImVec2 screen = io.DisplaySize;
+        const float scale = std::clamp(std::min(screen.x / kDesignWidth, screen.y / kDesignHeight),
+                                       0.75f, 1.6f);
+        paper.begin(io.DeltaTime, scale);
+        paper.setLayer(wowee::ui::PaperLayer::Page);
 
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
-        ImGui::TextUnformatted(
-            "Builds the assets this client reads out of a World of Warcraft install you "
-            "own. Nothing is written into the install itself.");
-        ImGui::PopTextWrapPos();
-        ImGui::PopStyleColor();
-        ImGui::Spacing();
+        // One sheet filling the window, a margin of desk around it.
+        const float margin = paper.px(14);
+        const ImVec2 a(margin, margin);
+        const ImVec2 b(screen.x - margin, screen.y - margin);
+        paper.sheet(a, b, false);
+        paper.claimMouse(a, b);
 
-        drawPanel(app);
+        const wowee::ui::PaperTheme& theme = paper.theme();
+        const float inset = paper.px(34);
+        const float x0 = a.x + inset;
+        const float x1 = b.x - inset;
+        float y = a.y + paper.px(26);
+        const float titleSize = paper.px(30);
+        paper.text(ImVec2(x0, y), "WoWee Asset Manager", titleSize, theme.ink, true);
+        y += paper.inkHeight(titleSize, true) + paper.px(6);
+        y += paper.wrapped(ImVec2(x0, y), x1 - x0,
+                           "Builds the assets this client reads out of a World of Warcraft "
+                           "install you own. Nothing is written into the install itself.",
+                           paper.px(14.5f), theme.inkSoft);
+        y += paper.px(4);
 
-        ImGui::End();
+        drawPanel(app, paper, ImVec2(x0, y), ImVec2(x1, b.y - paper.px(26)));
+        paper.end();
+
+        // Typed characters arrive only while SDL is asked for them, and the
+        // fields are the paper's rather than ImGui's, so ImGui's backend never
+        // asks. Asked here, on the frames a field has the keyboard.
+        if (paper.wantsTextInput() != SDL_TextInputActive(window)) {
+            if (paper.wantsTextInput()) SDL_StartTextInput(window);
+            else SDL_StopTextInput(window);
+        }
 
         ImGui::Render();
         // Re-read every frame: a window dragged between a Retina display and an
         // ordinary one changes this without resizing.
         const float now = displayScale(window, renderer);
         SDL_SetRenderScale(renderer, now, now);
-        SDL_SetRenderDrawColor(renderer, 24, 24, 28, 255);
+        // The desk the sheet lies on.
+        SDL_SetRenderDrawColor(renderer, 58, 44, 30, 255);
         SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
 

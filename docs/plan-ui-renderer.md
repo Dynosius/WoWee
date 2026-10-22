@@ -5,8 +5,8 @@
 **Scope:** everything the game draws in 2D - FrameXML, the pre-game screens, the
 shared surfaces drawn into FrameXML's frames (minimap, world map, taxi map), and
 the world-space overlays (nameplates, chat bubbles, floating combat text,
-weather). Not the developer tools, and not the standalone asset tool, which keep
-ImGui (section 9).
+weather), and the standalone asset tool, which draws the same paper controls
+as the pre-game screens. Not the developer tools (section 9).
 
 ---
 
@@ -285,22 +285,24 @@ world with bags, spellbook and map open makes up the standing set.
    - The quest pane in `map_window` goes to FrameXML's own quest list.
    - The loading screen goes to `paper_ui`'s drawing on `DrawList`.
 6. **ImGui out of the game binary.** The performance HUD becomes rows of text in
-   the `Dev` layer, and the first-run screen becomes a `paper_ui` screen (section
-   9). Then `imgui_impl_vulkan` and `imgui_impl_sdl3` leave the `wowee` target,
-   followed by `imgui` itself.
+   the `Dev` layer. Then `imgui_impl_vulkan` and `imgui_impl_sdl3` leave the
+   `wowee` target, followed by `imgui` itself. `wowee_assets` follows the same
+   path: its panel is `paper_ui` already, so once `paper_ui` draws on `DrawList`
+   the tool needs a `DrawList` backend for `SDL_Renderer` (geometry and
+   textures are what `SDL_RenderGeometry` takes) in place of
+   `imgui_impl_sdlrenderer3`.
 
 Steps 1 to 3 are the risk, because the whole interface draws through them.
 Steps 4 to 6 are cleanup that steps 1 to 3 make possible.
 
 ## 9. What keeps ImGui
 
-- **`wowee_assets`**, the standalone asset tool. It is already built on its own
-  ImGui target (`imgui_sdlrenderer`) and is a desktop tool, where a desktop look
-  is right.
-- **The asset-builder panel** (`tools/asset_manager/panel.cpp`, 572 lines). The
-  in-game first-run screen embeds it. Step 6 replaces it there with a
-  `paper_ui` screen covering what a first run needs: pick the install, build,
-  watch the progress, and go back. The tool keeps the full panel.
+- **The performance HUD**, until step 6. It is a developer's overlay and the
+  last thing worth moving.
+- **The asset tool and the first-run screen**, as a drawing layer only. Both
+  draw the asset panel (`tools/asset_manager/panel.cpp`) with `paper_ui`'s
+  controls, as the login screens do, and like them they reach the screen
+  through ImGui's draw lists and glyph atlas until steps 1 to 4 replace those.
 
 ## 10. Risks
 

@@ -277,7 +277,32 @@ public:
                   const std::vector<std::string>& items, int* index);
 
     bool checkbox(const char* id, ImVec2 at, float boxSize, const char* label,
-                  bool* value);
+                  bool* value, bool enabled = true);
+    /// One of several choices, of which only one can be made. Answers true on
+    /// the frame it is chosen, and not again while it stays chosen.
+    bool radio(const char* id, ImVec2 at, float boxSize, const char* label,
+               bool selected, bool enabled = true);
+    /// How far along something is, from 0 to 1.
+    void progress(ImVec2 a, ImVec2 b, float fraction);
+    /// A ruled box with nothing to type in, for what is read rather than
+    /// filled in - a log, a listing.
+    void frame(ImVec2 a, ImVec2 b);
+
+    /// A region holding more than fits in it, scrolled by the wheel and by the
+    /// mark in its margin. The contents are drawn between the two calls,
+    /// starting at the y beginScroll answers, and endScroll is told where they
+    /// stopped - which is how tall they turned out, used from the next frame.
+    ///
+    /// Controls inside hear the pointer only where the region shows them, so
+    /// a button scrolled out of sight cannot be pressed through whatever is
+    /// drawn over that spot. `stickToBottom` keeps the end in view as the
+    /// contents grow, until somebody scrolls up: a log being written.
+    float beginScroll(const char* id, ImVec2 a, ImVec2 b, bool stickToBottom = false);
+    void endScroll(float contentBottom);
+
+    /// The size of what is being drawn into, in the same pixels as everything
+    /// else here.
+    [[nodiscard]] ImVec2 screenSize() const;
     bool sliderFloat(const char* id, ImVec2 a, ImVec2 b, float* value, float lo,
                      float hi, const char* fmt = "%.0f");
     bool sliderInt(const char* id, ImVec2 a, ImVec2 b, int* value, int lo, int hi);
@@ -324,7 +349,25 @@ private:
         float scroll = 0.0f;   ///< how far a field's text has slid left in its box
         float scrollY = 0.0f;  ///< how far a list has been scrolled down
         int lastSelected = -1; ///< so a list can tell when its selection moved
+        float contentH = 0.0f; ///< how tall a scroll region's contents were
+        float lastMax = 0.0f;  ///< the furthest it could scroll, last frame
     };
+
+    /// A scroll region being drawn: where it is and where its contents start.
+    struct ScrollFrame {
+        ImU32 id = 0;
+        ImVec2 a, b;
+        float top = 0.0f;
+        bool hadHitClip = false;
+        ImVec2 hitA, hitB;   ///< the hit clip it replaced
+    };
+    std::vector<ScrollFrame> scrolls_;
+    /// Where the pointer may land on a control: everywhere, unless a scroll
+    /// region is being drawn, in which case only what it shows.
+    bool hitClip_ = false;
+    ImVec2 hitA_, hitB_;
+    /// The scroll mark of one region, shared with the list's.
+    void scrollMark(ImU32 id, ImVec2 a, ImVec2 b, FieldState& state, float contentH);
 
     [[nodiscard]] static ImU32 hashId(const char* s);
     [[nodiscard]] ImFont* face(bool titleFace) const;
