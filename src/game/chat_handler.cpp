@@ -293,7 +293,6 @@ void ChatHandler::registerOpcodes(DispatchTable& table) {
             if (!msg.empty()) {
                 owner_.addUIError(msg);
                 addSystemChatMessage(msg);
-                owner_.areaTriggerMsgsRef().push_back(msg);
             }
         }
     };

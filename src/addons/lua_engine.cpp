@@ -7368,6 +7368,59 @@ void LuaEngine::registerCoreAPI() {
         "end)\n"
         "duel:Hide()\n");
 
+    // Two banners this client puts over the middle of the screen, "Level N!"
+    // with a gold wash on a level-up and "You have been resurrected" with a
+    // pale one on coming back. No interface of 1.12 to 3.3.5 has either; the
+    // chat lines for both are the interface's own and are not repeated here.
+    //
+    // One builder for the pair: a frame over the whole screen, a tint that
+    // fades within the first second, and a line of text that holds and then
+    // fades over the last half second.
+    bootstrap(
+        "local function wBanner(name, font, r, g, b, tr, tg, tb)\n"
+        "    local f = CreateFrame('Frame', name)\n"
+        "    f:SetFrameStrata('FULLSCREEN_DIALOG')\n"
+        "    f.tint = f:CreateTexture(name .. 'Tint', 'BACKGROUND')\n"
+        "    f.tint:SetAllPoints(f)\n"
+        "    f.tint:SetTexture(tr, tg, tb, 1)\n"
+        "    local fontName = (font == 'huge') and ((NumberFontNormalHuge and 'NumberFontNormalHuge')\n"
+        "        or (GameFontNormalHuge and 'GameFontNormalHuge')) or nil\n"
+        "    f.text = f:CreateFontString(name .. 'Text', 'OVERLAY',\n"
+        "        fontName or (GameFontNormalLarge and 'GameFontNormalLarge') or 'GameFontNormal')\n"
+        "    f.text:SetTextColor(r, g, b)\n"
+        "    f.Start = function(self, text, duration, tintAlpha)\n"
+        "        self:ClearAllPoints()\n"
+        "        self:SetAllPoints(UIParent)\n"
+        "        self.text:ClearAllPoints()\n"
+        "        self.text:SetPoint('CENTER', self, 'CENTER', 0, UIParent:GetHeight() * 0.15)\n"
+        "        self.text:SetText(text)\n"
+        "        self.started, self.duration, self.tintAlpha = GetTime(), duration, tintAlpha\n"
+        "        self:Show()\n"
+        "    end\n"
+        "    f:SetScript('OnUpdate', function(self)\n"
+        "        local age = GetTime() - (self.started or 0)\n"
+        "        local left = (self.duration or 0) - age\n"
+        "        if left <= 0 then self:Hide() return end\n"
+        "        self.tint:SetAlpha(math.max(0, 1 - age) * (self.tintAlpha or 0))\n"
+        "        self.text:SetAlpha(left < 0.5 and left / 0.5 or 1)\n"
+        "    end)\n"
+        "    f:Hide()\n"
+        "    return f\n"
+        "end\n"
+        "local ding = wBanner('__WoweeLevelUpBanner', 'huge', 1, 0.86, 0.3, 1, 0.82, 0.2)\n"
+        "ding:RegisterEvent('PLAYER_LEVEL_UP')\n"
+        "ding:SetScript('OnEvent', function(self, event, level)\n"
+        "    level = tonumber(level or arg1)\n"
+        "    if level then self:Start('Level ' .. level .. '!', 4, 0.25) end\n"
+        "end)\n"
+        "local rez = wBanner('__WoweeResurrectBanner', 'large', 1, 0.94, 0.47, 0.78, 0.9, 1)\n"
+        "rez:RegisterEvent('PLAYER_ALIVE')\n"
+        "rez:RegisterEvent('PLAYER_UNGHOST')\n"
+        "rez:SetScript('OnEvent', function(self)\n"
+        "    if UnitIsDeadOrGhost and UnitIsDeadOrGhost('player') then return end\n"
+        "    self:Start('You have been resurrected', 3, 0.2)\n"
+        "end)\n");
+
     // C_Timer implementation via Lua (uses OnUpdate internally)
     bootstrap(
         "C_Timer = {}\n"

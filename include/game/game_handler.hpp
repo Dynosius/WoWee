@@ -1041,14 +1041,6 @@ public:
     const std::deque<CombatLogEntry>& getCombatLog() const;
     void clearCombatLog();
 
-    // Area trigger messages (SMSG_AREA_TRIGGER_MESSAGE) - drained by UI each frame
-    bool hasAreaTriggerMsg() const { return !areaTriggerMsgs_.empty(); }
-    std::string popAreaTriggerMsg() {
-        if (areaTriggerMsgs_.empty()) return {};
-        std::string msg = areaTriggerMsgs_.front();
-        areaTriggerMsgs_.pop_front();
-        return msg;
-    }
 
     // Threat
     using ThreatEntry = CombatHandler::ThreatEntry;
@@ -2650,10 +2642,6 @@ public:
     /// Send CMSG_SET_TITLE to activate a title (bit >= 0) or clear it (bit = -1).
     void sendSetTitle(int32_t bit);
 
-    // Area discovery callback - fires when SMSG_EXPLORATION_EXPERIENCE is received
-    using AreaDiscoveryCallback = std::function<void(const std::string& areaName, uint32_t xpGained)>;
-    void setAreaDiscoveryCallback(AreaDiscoveryCallback cb) { areaDiscoveryCallback_ = std::move(cb); }
-
     // Quest objective progress callback - fires on SMSG_QUESTUPDATE_ADD_KILL / ADD_ITEM
     const std::unordered_map<uint32_t, uint64_t>& getCriteriaProgress() const { return criteriaProgress_; }
     /// Returns the WoW PackedTime earn date for an achievement, or 0 if unknown.
@@ -2961,10 +2949,6 @@ public:
     // Loot window open/close callback (for loot kneel animation)
     using LootWindowCallback = std::function<void(bool open)>;
     void setLootWindowCallback(LootWindowCallback cb) { lootWindowCallback_ = std::move(cb); }
-
-    // Quest turn-in completion callback
-    using QuestCompleteCallback = std::function<void(uint32_t questId, const std::string& questTitle)>;
-    void setQuestCompleteCallback(QuestCompleteCallback cb) { questCompleteCallback_ = std::move(cb); }
 
     // Mount state
     using MountCallback = std::function<void(uint32_t mountDisplayId)>;  // 0 = dismount
@@ -3714,7 +3698,6 @@ public:
     auto& activeAreaTriggersRef() { return activeAreaTriggers_; }
     auto& areaTriggerCheckTimerRef() { return areaTriggerCheckTimer_; }
     auto& areaTriggerDbcLoadedRef() { return areaTriggerDbcLoaded_; }
-    auto& areaTriggerMsgsRef() { return areaTriggerMsgs_; }
     auto& areaTriggersRef() { return areaTriggers_; }
     auto& areaTriggerSuppressFirstRef() { return areaTriggerSuppressFirst_; }
     auto& areaTriggerCooldownRef() { return areaTriggerCooldown_; }
@@ -3809,7 +3792,6 @@ public:
     auto& playerEquipmentCallbackRef() { return playerEquipmentCallback_; }
     auto& playerHealthCallbackRef() { return playerHealthCallback_; }
     auto& playerSpawnCallbackRef() { return playerSpawnCallback_; }
-    auto& questCompleteCallbackRef() { return questCompleteCallback_; }
     auto& spellCastAnimCallbackRef() { return spellCastAnimCallback_; }
     auto& spellCastFailedCallbackRef() { return spellCastFailedCallback_; }
     auto& sprintAuraCallbackRef() { return sprintAuraCallback_; }
@@ -4397,7 +4379,6 @@ private:
     float inspectRateLimit_ = 0.0f;
 
     // ---- Combat ----
-    std::deque<std::string>    areaTriggerMsgs_;
 
     WorldEntryCallback worldEntryCallback_;
     KnockBackCallback knockBackCallback_;
@@ -5041,7 +5022,6 @@ private:
     OtherPlayerLevelUpCallback otherPlayerLevelUpCallback_;
     OtherPlayerMountCallback otherPlayerMountCallback_;
     AchievementEarnedCallback achievementEarnedCallback_;
-    AreaDiscoveryCallback areaDiscoveryCallback_;
     MountCallback mountCallback_;
     TaxiPrecacheCallback taxiPrecacheCallback_;
     TaxiOrientationCallback taxiOrientationCallback_;
@@ -5125,7 +5105,6 @@ private:
     LootWindowCallback lootWindowCallback_;
 
     // ---- Quest completion callback ----
-    QuestCompleteCallback questCompleteCallback_;
 
     // ---- GM Ticket state (SMSG_GMTICKET_GETTICKET / SMSG_GMTICKET_SYSTEMSTATUS) ----
     bool        gmTicketActive_    = false;  ///< True when an open ticket exists on the server

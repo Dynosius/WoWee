@@ -224,7 +224,6 @@ void GameHandler::registerCoreOpcodes() {
                 }
                 addLocalChatLine(game::ChatType::COMBAT_XP_GAIN, msg);
                 addCombatText(CombatTextEntry::XP_GAIN, static_cast<int32_t>(xpGained), 0, true);
-                if (areaDiscoveryCallback_) areaDiscoveryCallback_(areaName, xpGained);
             }
         }
     };

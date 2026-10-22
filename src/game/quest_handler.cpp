@@ -744,9 +744,10 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
             }
             for (auto it = questLog_.begin(); it != questLog_.end(); ++it) {
                 if (it->questId == questId) {
-                    // Fire toast callback before erasing
-                    if (owner_.questCompleteCallbackRef()) {
-                        owner_.questCompleteCallbackRef()(questId, it->title);
+                    // The turn-in's line in chat, which every one of the
+                    // supported clients writes there and nowhere else.
+                    if (!it->title.empty()) {
+                        owner_.addSystemChatMessage(it->title + " completed.");
                     }
                     // Play quest-complete sound
                     if (auto* ac = owner_.services().audioCoordinator) {
