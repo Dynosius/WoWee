@@ -40,19 +40,6 @@ void DialogManager::renderDialogs(game::GameHandler& gameHandler) {
 
 }
 
-// ---------------------------------------------------------------------------
-// Render late dialogs (resurrect, talent wipe, pet unlearn)
-// ---------------------------------------------------------------------------
-void DialogManager::renderLateDialogs(game::GameHandler& gameHandler) {
-    // The resurrect request and the talent wipe are uiparent.lua's, raised
-    // from events this client fires.
-    //
-    // The pet unlearn is not: staticpopup.lua declares no CONFIRM_PET_UNLEARN,
-    // so this client's is the only one there is and hiding it would leave the
-    // confirmation with nothing to answer it.
-    renderPetUnlearnConfirmDialog(gameHandler);
-}
-
 // ============================================================
 // Group Invite Popup
 // ============================================================
@@ -96,69 +83,6 @@ void DialogManager::renderDuelCountdown(game::GameHandler& gameHandler) {
     // Drop shadow
     dl->AddText(font, scaledSize, ImVec2(tx + 2.0f, ty + 2.0f), IM_COL32(0, 0, 0, alpha / 2), buf);
     dl->AddText(font, scaledSize, ImVec2(tx, ty), color, buf);
-}
-
-// ============================================================
-// Talent Wipe Confirm Dialog
-// ============================================================
-
-void DialogManager::renderPetUnlearnConfirmDialog(game::GameHandler& gameHandler) {
-    if (!gameHandler.showPetUnlearnDialog()) return;
-
-    auto* window = services_.window;
-    float screenW = window ? static_cast<float>(window->getWidth()) : 1280.0f;
-    float screenH = window ? static_cast<float>(window->getHeight()) : 720.0f;
-
-    float dlgW = 340.0f;
-    float dlgH = 130.0f;
-    ImGui::SetNextWindowPos(ImVec2(screenW / 2 - dlgW / 2, screenH * 0.3f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(dlgW, dlgH), ImGuiCond_Always);
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.15f, 0.95f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.8f, 0.7f, 0.2f, 1.0f));
-
-    if (ImGui::Begin("##PetUnlearnDialog", nullptr,
-            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar)) {
-
-        ImGui::Spacing();
-        uint32_t cost = gameHandler.getPetUnlearnCost();
-        const std::string costStr = game::formatCopperPrice(cost);
-
-        std::string text = std::string("Reset your pet's talents for ") + costStr + "?";
-        float textW = ImGui::CalcTextSize(text.c_str()).x;
-        ImGui::SetCursorPosX(std::max(4.0f, (dlgW - textW) / 2));
-        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.4f, 1.0f), "%s", text.c_str());
-
-        ImGui::Spacing();
-        ImGui::SetCursorPosX(8.0f);
-        ImGui::TextDisabled("All pet talent points will be refunded.");
-        ImGui::Spacing();
-
-        float btnW = 110.0f;
-        float spacing = 20.0f;
-        ImGui::SetCursorPosX((dlgW - btnW * 2 - spacing) / 2);
-
-        ImGui::PushStyleColor(ImGuiCol_Button, colors::kBtnDkGreen);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kBtnDkGreenHover);
-        if (ImGui::Button("Confirm##petunlearn", ImVec2(btnW, 30))) {
-            gameHandler.confirmPetUnlearn();
-        }
-        ImGui::PopStyleColor(2);
-
-        ImGui::SameLine(0, spacing);
-
-        ImGui::PushStyleColor(ImGuiCol_Button, colors::kBtnDkRed);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::kBtnDkRedHover);
-        if (ImGui::Button("Cancel##petunlearn", ImVec2(btnW, 30))) {
-            gameHandler.cancelPetUnlearn();
-        }
-        ImGui::PopStyleColor(2);
-    }
-    ImGui::End();
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar();
 }
 
 } // namespace ui

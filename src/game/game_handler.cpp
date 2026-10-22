@@ -4032,12 +4032,6 @@ uint32_t GameHandler::getTalentWipeCost() const {
 void GameHandler::cancelTalentWipe() {
     if (spellHandler_) spellHandler_->cancelTalentWipe();
 }
-bool GameHandler::showPetUnlearnDialog() const {
-    return spellHandler_ ? spellHandler_->showPetUnlearnDialog() : false;
-}
-uint32_t GameHandler::getPetUnlearnCost() const {
-    return spellHandler_ ? spellHandler_->getPetUnlearnCost() : 0;
-}
 void GameHandler::cancelPetUnlearn() {
     if (spellHandler_) spellHandler_->cancelPetUnlearn();
 }

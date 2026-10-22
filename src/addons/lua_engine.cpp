@@ -7306,6 +7306,30 @@ void LuaEngine::registerCoreAPI() {
         "end)\n"
         "destroyFrame:Hide()\n");
 
+    // The pet's talent reset, which staticpopup.lua declares nothing for. The
+    // server asks with SMSG_PET_UNLEARN_CONFIRM and the cost; the answer goes
+    // back through ConfirmPetUnlearn and CancelPetUnlearn. Written when shown,
+    // for the reason the disenchant prompt is: staticpopup.lua assigns
+    // StaticPopupDialogs after this runs.
+    bootstrap(
+        "local petUnlearnFrame = CreateFrame('Frame', '__WoweePetUnlearnConfirm')\n"
+        "petUnlearnFrame:RegisterEvent('CONFIRM_PET_UNLEARN')\n"
+        "petUnlearnFrame:SetScript('OnEvent', function(self, event, cost)\n"
+        "    if not StaticPopupDialogs then return end\n"
+        "    StaticPopupDialogs['CONFIRM_PET_UNLEARN'] = {\n"
+        "        text = 'Reset your pet\\'s talents? All pet talent points will be refunded.',\n"
+        "        button1 = ACCEPT or 'Accept', button2 = CANCEL or 'Cancel',\n"
+        "        OnAccept = function() ConfirmPetUnlearn() end,\n"
+        "        OnCancel = function() CancelPetUnlearn() end,\n"
+        "        hasMoneyFrame = 1, timeout = 0, hideOnEscape = 1,\n"
+        "    }\n"
+        "    local dialog = StaticPopup_Show('CONFIRM_PET_UNLEARN')\n"
+        "    if dialog then\n"
+        "        MoneyFrame_Update(dialog:GetName() .. 'MoneyFrame', tonumber(cost or arg1) or 0)\n"
+        "    end\n"
+        "end)\n"
+        "petUnlearnFrame:Hide()\n");
+
     // C_Timer implementation via Lua (uses OnUpdate internally)
     bootstrap(
         "C_Timer = {}\n"

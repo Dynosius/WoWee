@@ -2657,6 +2657,17 @@ void registerSocialLuaAPI(lua_State* L) {
             if (auto* gh = getGameHandler(L)) gh->confirmTalentWipe();
             return 0;
         }},
+                // The pet's talent reset has no popup of FrameXML's own; the
+                // one in lua_engine.cpp is raised from CONFIRM_PET_UNLEARN and
+                // answers through these two.
+                {"ConfirmPetUnlearn", [](lua_State* L) -> int {
+            if (auto* gh = getGameHandler(L)) gh->confirmPetUnlearn();
+            return 0;
+        }},
+                {"CancelPetUnlearn", [](lua_State* L) -> int {
+            if (auto* gh = getGameHandler(L)) gh->cancelPetUnlearn();
+            return 0;
+        }},
                 {"AcceptGroup",         lua_AcceptGroup},
                 {"DeclineGroup",        lua_DeclineGroup},
                 {"AcceptGuild",         lua_AcceptGuild},

@@ -251,8 +251,6 @@ public:
     void cancelTalentWipe() { talentWipePending_ = false; }
 
     // Pet talent respec confirm
-    [[nodiscard]] bool showPetUnlearnDialog() const { return petUnlearnPending_; }
-    [[nodiscard]] uint32_t getPetUnlearnCost() const { return petUnlearnCost_; }
     void confirmPetUnlearn();
     void cancelPetUnlearn() { petUnlearnPending_ = false; }
 

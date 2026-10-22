@@ -1814,8 +1814,6 @@ public:
     void confirmTalentWipe();
     void cancelTalentWipe();
     // Pet talent respec confirm
-    bool showPetUnlearnDialog() const;
-    uint32_t getPetUnlearnCost() const;
     void confirmPetUnlearn();
     void cancelPetUnlearn();
 

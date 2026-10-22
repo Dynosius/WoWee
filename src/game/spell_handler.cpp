@@ -629,6 +629,7 @@ void SpellHandler::registerOpcodes(DispatchTable& table) {
             packet.readUInt64();   // the pet's guid; the cost is what is asked for
             petUnlearnCost_ = packet.readUInt32();
             petUnlearnPending_ = true;
+            owner_.fireAddonEvent("CONFIRM_PET_UNLEARN", {std::to_string(petUnlearnCost_)});
         }
         packet.skipAll();
     };

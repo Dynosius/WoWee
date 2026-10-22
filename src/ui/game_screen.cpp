@@ -714,7 +714,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     if (showMinimap_) {
         renderMinimapMarkers(gameHandler);
     }
-    dialogManager_.renderLateDialogs(gameHandler);
     chatPanel_.renderBubbles(gameHandler);
     // Not gated on GameMenu ownership. FrameXML's own options frames are shells
     // - its menu buttons are routed here through ShowUIPanel - and this window
