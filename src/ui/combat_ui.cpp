@@ -36,6 +36,8 @@ namespace {
     using namespace wowee::ui::colors;
     using namespace wowee::ui::helpers;
     constexpr auto& kColorRed         = kRed;
+    constexpr auto& kColorGreen       = kGreen;
+    constexpr auto& kColorBrightGreen = kBrightGreen;
     constexpr auto& kColorYellow      = kYellow;
 } // anonymous namespace
 
@@ -752,6 +754,345 @@ void CombatUI::renderDPSMeter(game::GameHandler& gameHandler,
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
+}
+
+// ─── Combat Log Window ────────────────────────────────────────────────────────
+void CombatUI::renderCombatLog(game::GameHandler& gameHandler,
+                              SpellbookScreen& spellbookScreen) {
+    if (!showCombatLog_) return;
+
+    const auto& log = gameHandler.getCombatLog();
+
+    ImGui::SetNextWindowSize(ImVec2(520, 320), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(160, 200), ImGuiCond_FirstUseEver);
+
+    char title[64];
+    snprintf(title, sizeof(title), "Combat Log (%zu)###CombatLog", log.size());
+    if (!ImGui::Begin(title, &showCombatLog_)) {
+        ImGui::End();
+        return;
+    }
+
+    // Filter toggles
+    static bool filterDamage  = true;
+    static bool filterHeal    = true;
+    static bool filterMisc    = true;
+    static bool autoScroll    = true;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
+    ImGui::Checkbox("Damage",  &filterDamage); ImGui::SameLine();
+    ImGui::Checkbox("Healing", &filterHeal);   ImGui::SameLine();
+    ImGui::Checkbox("Misc",    &filterMisc);   ImGui::SameLine();
+    ImGui::Checkbox("Auto-scroll", &autoScroll);
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 40.0f);
+    if (ImGui::SmallButton("Clear"))
+        gameHandler.clearCombatLog();
+    ImGui::PopStyleVar();
+    ImGui::Separator();
+
+    // Helper: categorize entry
+    auto isDamageType = [](game::CombatTextEntry::Type t) {
+        using T = game::CombatTextEntry;
+        return t == T::MELEE_DAMAGE || t == T::SPELL_DAMAGE ||
+               t == T::CRIT_DAMAGE  || t == T::PERIODIC_DAMAGE ||
+               t == T::ENVIRONMENTAL || t == T::GLANCING || t == T::CRUSHING;
+    };
+    auto isHealType = [](game::CombatTextEntry::Type t) {
+        using T = game::CombatTextEntry;
+        return t == T::HEAL || t == T::CRIT_HEAL || t == T::PERIODIC_HEAL;
+    };
+
+    // Two-column table: Time | Event description
+    ImGuiTableFlags tableFlags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+                                 ImGuiTableFlags_SizingFixedFit;
+    float availH = ImGui::GetContentRegionAvail().y;
+    if (ImGui::BeginTable("##CombatLogTable", 2, tableFlags, ImVec2(0.0f, availH))) {
+        ImGui::TableSetupScrollFreeze(0, 0);
+        ImGui::TableSetupColumn("Time",  ImGuiTableColumnFlags_WidthFixed, 62.0f);
+        ImGui::TableSetupColumn("Event", ImGuiTableColumnFlags_WidthStretch);
+
+        for (const auto& e : log) {
+            // Apply filters
+            bool isDmg  = isDamageType(e.type);
+            bool isHeal = isHealType(e.type);
+            bool isMisc = !isDmg && !isHeal;
+            if (isDmg  && !filterDamage) continue;
+            if (isHeal && !filterHeal)   continue;
+            if (isMisc && !filterMisc)   continue;
+
+            // Format timestamp as HH:MM:SS
+            char timeBuf[10];
+            {
+                const std::tm tm_info = core::localTime(e.timestamp);
+                snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d",
+                         tm_info.tm_hour, tm_info.tm_min, tm_info.tm_sec);
+            }
+
+            // Build event description and choose color
+            char desc[256];
+            ImVec4 color;
+            using T = game::CombatTextEntry;
+            const char* src = e.sourceName.empty() ? (e.isPlayerSource ? "You" : "?") : e.sourceName.c_str();
+            const char* tgt = e.targetName.empty() ? "?" : e.targetName.c_str();
+            const std::string& spellName = (e.spellId != 0) ? gameHandler.getSpellName(e.spellId) : std::string();
+            const char* spell = spellName.empty() ? nullptr : spellName.c_str();
+
+            switch (e.type) {
+                case T::MELEE_DAMAGE:
+                    snprintf(desc, sizeof(desc), "%s hits %s for %d", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 0.9f, 0.3f, 1.0f) : colors::kSoftRed;
+                    break;
+                case T::CRIT_DAMAGE:
+                    snprintf(desc, sizeof(desc), "%s crits %s for %d!", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 1.0f, 0.0f, 1.0f) : colors::kBrightRed;
+                    break;
+                case T::SPELL_DAMAGE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s's %s hits %s for %d", src, spell, tgt, e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "%s's spell hits %s for %d", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 0.9f, 0.3f, 1.0f) : colors::kSoftRed;
+                    break;
+                case T::PERIODIC_DAMAGE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s's %s ticks %s for %d", src, spell, tgt, e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "%s's DoT ticks %s for %d", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(0.9f, 0.7f, 0.3f, 1.0f) : ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
+                    break;
+                case T::HEAL:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s heals %s for %d (%s)", src, tgt, e.amount, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s heals %s for %d", src, tgt, e.amount);
+                    color = kColorGreen;
+                    break;
+                case T::CRIT_HEAL:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s critically heals %s for %d! (%s)", src, tgt, e.amount, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s critically heals %s for %d!", src, tgt, e.amount);
+                    color = kColorBrightGreen;
+                    break;
+                case T::PERIODIC_HEAL:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s's %s heals %s for %d", src, spell, tgt, e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "%s's HoT heals %s for %d", src, tgt, e.amount);
+                    color = ImVec4(0.4f, 0.9f, 0.4f, 1.0f);
+                    break;
+                case T::MISS:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s's %s misses %s", src, spell, tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s misses %s", src, tgt);
+                    color = colors::kMediumGray;
+                    break;
+                case T::DODGE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s dodges %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s dodges %s's attack", tgt, src);
+                    color = colors::kMediumGray;
+                    break;
+                case T::PARRY:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s parries %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s parries %s's attack", tgt, src);
+                    color = colors::kMediumGray;
+                    break;
+                case T::BLOCK:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s blocks %s's %s (%d blocked)", tgt, src, spell, e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "%s blocks %s's attack (%d blocked)", tgt, src, e.amount);
+                    color = ImVec4(0.65f, 0.75f, 0.65f, 1.0f);
+                    break;
+                case T::EVADE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s evades %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s evades %s's attack", tgt, src);
+                    color = colors::kMediumGray;
+                    break;
+                case T::IMMUNE:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s is immune to %s", tgt, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s is immune", tgt);
+                    color = colors::kSilver;
+                    break;
+                case T::ABSORB:
+                    if (spell && e.amount > 0)
+                        snprintf(desc, sizeof(desc), "%s's %s absorbs %d", src, spell, e.amount);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s absorbs %s", tgt, spell);
+                    else if (e.amount > 0)
+                        snprintf(desc, sizeof(desc), "%d absorbed", e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "Absorbed");
+                    color = ImVec4(0.5f, 0.8f, 1.0f, 1.0f);
+                    break;
+                case T::RESIST:
+                    if (spell && e.amount > 0)
+                        snprintf(desc, sizeof(desc), "%s resists %s's %s (%d resisted)", tgt, src, spell, e.amount);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s resists %s's %s", tgt, src, spell);
+                    else if (e.amount > 0)
+                        snprintf(desc, sizeof(desc), "%d resisted", e.amount);
+                    else
+                        snprintf(desc, sizeof(desc), "Resisted");
+                    color = ImVec4(0.6f, 0.6f, 0.9f, 1.0f);
+                    break;
+                case T::DEFLECT:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s deflects %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s deflects %s's attack", tgt, src);
+                    color = ImVec4(0.65f, 0.8f, 0.95f, 1.0f);
+                    break;
+                case T::REFLECT:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s reflects %s's %s", tgt, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s reflects %s's attack", tgt, src);
+                    color = ImVec4(0.8f, 0.7f, 1.0f, 1.0f);
+                    break;
+                case T::ENVIRONMENTAL: {
+                    const char* envName = "Environmental";
+                    switch (e.powerType) {
+                        case 0: envName = "Fatigue"; break;
+                        case 1: envName = "Drowning"; break;
+                        case 2: envName = "Falling"; break;
+                        case 3: envName = "Lava"; break;
+                        case 4: envName = "Slime"; break;
+                        case 5: envName = "Fire"; break;
+                    }
+                    snprintf(desc, sizeof(desc), "%s damage: %d", envName, e.amount);
+                    color = ImVec4(1.0f, 0.5f, 0.2f, 1.0f);
+                    break;
+                }
+                case T::ENERGIZE: {
+                    const char* pwrName = game::powerTypeName(e.powerType);
+                    if (!pwrName) pwrName = "power";
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s gains %d %s (%s)", tgt, e.amount, pwrName, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s gains %d %s", tgt, e.amount, pwrName);
+                    color = colors::kLightBlue;
+                    break;
+                }
+                case T::POWER_DRAIN: {
+                    const char* drainName = game::powerTypeName(e.powerType);
+                    if (!drainName) drainName = "power";
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s loses %d %s to %s's %s", tgt, e.amount, drainName, src, spell);
+                    else
+                        snprintf(desc, sizeof(desc), "%s loses %d %s", tgt, e.amount, drainName);
+                    color = ImVec4(0.45f, 0.75f, 1.0f, 1.0f);
+                    break;
+                }
+                case T::XP_GAIN:
+                    snprintf(desc, sizeof(desc), "You gain %d experience", e.amount);
+                    color = ImVec4(0.8f, 0.6f, 1.0f, 1.0f);
+                    break;
+                case T::PROC_TRIGGER:
+                    if (spell)
+                        snprintf(desc, sizeof(desc), "%s procs!", spell);
+                    else
+                        snprintf(desc, sizeof(desc), "Proc triggered");
+                    color = ImVec4(1.0f, 0.85f, 0.3f, 1.0f);
+                    break;
+                case T::DISPEL:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You dispel %s from %s", spell, tgt);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s dispels %s from %s", src, spell, tgt);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You dispel from %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s dispels from %s", src, tgt);
+                    color = ImVec4(0.6f, 0.9f, 1.0f, 1.0f);
+                    break;
+                case T::STEAL:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You steal %s from %s", spell, tgt);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s steals %s from %s", src, spell, tgt);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You steal from %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s steals from %s", src, tgt);
+                    color = ImVec4(0.8f, 0.7f, 1.0f, 1.0f);
+                    break;
+                case T::INTERRUPT:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You interrupt %s's %s", tgt, spell);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s interrupts %s's %s", src, tgt, spell);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You interrupt %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s interrupted", tgt);
+                    color = ImVec4(1.0f, 0.6f, 0.9f, 1.0f);
+                    break;
+                case T::INSTAKILL:
+                    if (spell && e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You instantly kill %s with %s", tgt, spell);
+                    else if (spell)
+                        snprintf(desc, sizeof(desc), "%s instantly kills %s with %s", src, tgt, spell);
+                    else if (e.isPlayerSource)
+                        snprintf(desc, sizeof(desc), "You instantly kill %s", tgt);
+                    else
+                        snprintf(desc, sizeof(desc), "%s instantly kills %s", src, tgt);
+                    color = colors::kBrightRed;
+                    break;
+                case T::HONOR_GAIN:
+                    snprintf(desc, sizeof(desc), "You gain %d honor", e.amount);
+                    color = colors::kBrightGold;
+                    break;
+                case T::GLANCING:
+                    snprintf(desc, sizeof(desc), "%s glances %s for %d", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(0.75f, 0.75f, 0.5f, 1.0f)
+                                             : ImVec4(0.75f, 0.4f, 0.4f, 1.0f);
+                    break;
+                case T::CRUSHING:
+                    snprintf(desc, sizeof(desc), "%s crushes %s for %d!", src, tgt, e.amount);
+                    color = e.isPlayerSource ? ImVec4(1.0f, 0.55f, 0.1f, 1.0f)
+                                             : ImVec4(1.0f, 0.15f, 0.15f, 1.0f);
+                    break;
+                default:
+                    snprintf(desc, sizeof(desc), "Combat event (type %d, amount %d)", static_cast<int>(e.type), e.amount);
+                    color = ui::colors::kLightGray;
+                    break;
+            }
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("%s", timeBuf);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextColored(color, "%s", desc);
+            // Hover tooltip: show rich spell info for entries with a known spell
+            if (e.spellId != 0 && ImGui::IsItemHovered()) {
+                auto* assetMgrLog = services_.assetManager;
+                ImGui::BeginTooltip();
+                bool richOk = spellbookScreen.renderSpellInfoTooltip(e.spellId, gameHandler, assetMgrLog);
+                if (!richOk) {
+                    ImGui::Text("%s", spellName.c_str());
+                }
+                ImGui::EndTooltip();
+            }
+        }
+
+        // Auto-scroll to bottom
+        if (autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+            ImGui::SetScrollHereY(1.0f);
+
+        ImGui::EndTable();
+    }
+
+    ImGui::End();
 }
 
 } // namespace ui

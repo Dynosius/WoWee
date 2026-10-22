@@ -1,4 +1,5 @@
 #include "ui/graphics_choices.hpp"
+#include "game/game_utils.hpp"
 #include "ui/game_screen.hpp"
 #include "ui/gamepad_controls.hpp"
 #include "core/gamepad.hpp"
@@ -656,8 +657,16 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         if (cmds.showWho) {
             gameHandler.runInterfaceCommand("ToggleFriendsFrame(2)");
         }
-        // The combat log is a tab of the chat frame in FrameXML, not a window.
-        if (cmds.toggleCombatLog) gameHandler.runInterfaceCommand("FCF_SelectDockFrame(COMBATLOG)");
+        // The combat log is a tab of the chat frame in the interfaces that have
+        // one, and a window of this client's own in the two that do not.
+        if (cmds.toggleCombatLog) {
+            if (game::isClassicLikeExpansion()) {
+                combatUI_.showCombatLog_ = !combatUI_.showCombatLog_;
+            } else {
+                gameHandler.runInterfaceCommand(
+                    "if COMBATLOG and FCF_SelectDockFrame then FCF_SelectDockFrame(COMBATLOG) end");
+            }
+        }
         if (cmds.takeScreenshot) takeScreenshot();
         switch (cmds.recording) {
             case ChatPanel::SlashCommands::Recording::Toggle: toggleRecording(); break;
@@ -691,6 +700,7 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // own position. FrameXML's TargetFrame has one, and could be measured the
     // way the minimap measures MinimapCluster, but nothing reads it yet.
     combatUI_.renderDPSMeter(gameHandler, settingsPanel_, -1.0f);
+    combatUI_.renderCombatLog(gameHandler, spellbookScreen);
     toastManager_.renderEarlyToasts(ImGui::GetIO().DeltaTime, gameHandler);
     // FriendsFrame is what "social" suppresses, and its tabs are the friends
     // list, the who list and the guild roster. Only the friends list was gated

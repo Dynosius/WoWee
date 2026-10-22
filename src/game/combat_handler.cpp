@@ -499,8 +499,10 @@ void CombatHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, ui
     // log window itself is registered to, and nothing fired it, so the window
     // was empty however much fighting there was. No filter is applied here: the
     // window applies its own settings to what it is given.
-    if (owner_.addonEventCallbackRef()) {
+    // 1.12 has no combat log event, so Classic and Turtle are not sent one.
+    if (owner_.addonEventCallbackRef() && !isClassicLikeExpansion()) {
         CombatLogEventInput input;
+        input.layout = isActiveExpansion("tbc") ? CombatLogLayout::Tbc : CombatLogLayout::Wotlk;
         input.type = type;
         input.amount = amount;
         input.spellId = spellId;

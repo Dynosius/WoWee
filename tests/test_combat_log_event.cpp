@@ -110,3 +110,25 @@ TEST_CASE("the player's own events are flagged as theirs", "[combatlog]") {
     CHECK(a[7] == std::to_string(combat_log::kOutsider | combat_log::kHostile |
                                  combat_log::kControlNpc | combat_log::kTypeNpc));
 }
+
+TEST_CASE("TBC damage has no overkill and its heal no overhealing", "[combatlog]") {
+    auto swing = hit(T::MELEE_DAMAGE);
+    swing.layout = CombatLogLayout::Tbc;
+    const auto a = buildCombatLogEvent(swing);
+    REQUIRE(a.size() == 16);
+    CHECK(a[8] == "42");   // amount
+    CHECK(a[9] == "1");    // school, where 3.3.5 has the overkill
+
+    auto heal = hit(T::CRIT_HEAL, 1);
+    heal.layout = CombatLogLayout::Tbc;
+    const auto h = buildCombatLogEvent(heal);
+    REQUIRE(h.size() == 13);
+    CHECK(h[11] == "42");
+    CHECK(h[12] == "1");   // critical straight after the amount
+}
+
+TEST_CASE("TBC misses carry no amount", "[combatlog]") {
+    auto block = hit(T::BLOCK, 1);
+    block.layout = CombatLogLayout::Tbc;
+    CHECK(buildCombatLogEvent(block).back() == "BLOCK");
+}

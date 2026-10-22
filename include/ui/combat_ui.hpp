@@ -33,6 +33,10 @@ public:
     using SpellIconFn = std::function<VkDescriptorSet(uint32_t spellId, pipeline::AssetManager*)>;
 
     // ---- Toggle booleans (written by slash commands / escape handler / settings) ----
+    /// The client's own combat log window, for the expansions whose interface
+    /// has no combat log tab of its own: Classic and Turtle. The others use
+    /// FrameXML's, a tab of the chat frame.
+    bool showCombatLog_ = false;
 
     size_t raidWarnChatSeenCount_ = 0;
 
@@ -71,6 +75,8 @@ public:
         dpsMeterPos_ = ImVec2(x, y);
         dpsMeterUserPositioned_ = true;
     }
+
+    void renderCombatLog(game::GameHandler& gameHandler, SpellbookScreen& spellbookScreen);
 
     // UIServices injection (Phase B singleton breaking)
     void setServices(const UIServices& services) { services_ = services; }

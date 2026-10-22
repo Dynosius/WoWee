@@ -11,8 +11,15 @@
 namespace wowee {
 namespace game {
 
+/// Which interface the arguments are for. 2.4.3's combat log addon reads damage
+/// without an overkill and a heal without overhealing or absorbed, and 3.3.5's
+/// reads both; a layout for one handed to the other is read a field out.
+/// 1.12 has no combat log event at all.
+enum class CombatLogLayout { Tbc, Wotlk };
+
 /// What the client knows about one combat event, before it is shaped for Lua.
 struct CombatLogEventInput {
+    CombatLogLayout layout = CombatLogLayout::Wotlk;
     CombatTextEntry::Type type = CombatTextEntry::MELEE_DAMAGE;
     int32_t amount = 0;
     uint32_t spellId = 0;
@@ -98,13 +105,18 @@ inline std::vector<std::string> buildCombatLogEvent(const CombatLogEventInput& i
                                                              : in.spellName,
                                         physical};
     };
-    // Suffix of a damage event: amount, overkill, school, resisted, blocked,
+    const bool wotlk = in.layout == CombatLogLayout::Wotlk;
+    // Suffix of a damage event: amount, [overkill,] school, resisted, blocked,
     // absorbed, critical, glancing, crushing.
     auto damageSuffix = [&](bool crit, bool glancing, bool crushing) {
-        return std::vector<std::string>{amount, "0", physical, nil, nil, nil,
-                                        eventBool(crit), eventBool(glancing), eventBool(crushing)};
+        std::vector<std::string> out{amount};
+        if (wotlk) out.push_back("0");   // overkill
+        out.insert(out.end(), {physical, nil, nil, nil, std::string(eventBool(crit)),
+                               std::string(eventBool(glancing)), std::string(eventBool(crushing))});
+        return out;
     };
     auto healSuffix = [&](bool crit) {
+        if (!wotlk) return std::vector<std::string>{amount, eventBool(crit)};
         return std::vector<std::string>{amount, "0", nil, eventBool(crit)};
     };
 
@@ -157,7 +169,7 @@ inline std::vector<std::string> buildCombatLogEvent(const CombatLogEventInput& i
                 in.type == T::REFLECT ? "REFLECT" : "MISS";
             suffix = {missType};
             // The parser formats these three with the amount turned aside.
-            if (in.type == T::BLOCK) suffix.push_back(amount);
+            if (wotlk && in.type == T::BLOCK) suffix.push_back(amount);
             break;
         }
         case T::RESIST: case T::ABSORB:
@@ -167,7 +179,8 @@ inline std::vector<std::string> buildCombatLogEvent(const CombatLogEventInput& i
             if (in.amount > 0) return {};
             event = hasSpell ? "SPELL_MISSED" : "SWING_MISSED";
             if (hasSpell) prefix = spellPrefix();
-            suffix = {in.type == T::RESIST ? "RESIST" : "ABSORB", "0"};
+            suffix = {in.type == T::RESIST ? "RESIST" : "ABSORB"};
+            if (wotlk) suffix.push_back("0");
             break;
         default:
             return {};
