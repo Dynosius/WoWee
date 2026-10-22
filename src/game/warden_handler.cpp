@@ -182,7 +182,7 @@ void WardenHandler::update(float deltaTime) {
                 }
                 if (owner_.getSocket() && owner_.getSocket()->isConnected()) {
                     owner_.getSocket()->send(response);
-                    LOG_WARNING("Warden: Sent async CHEAT_CHECKS_RESULT (", plaintext.size(), " bytes plaintext)");
+                    LOG_DEBUG("Warden: Sent async CHEAT_CHECKS_RESULT (", plaintext.size(), " bytes plaintext)");
                 }
             }
         }
@@ -610,7 +610,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
             // request holding one is answered off the main thread; update()
             // encrypts and sends what comes back.
             if (wardenRequestHasCodeScan(decrypted, wardenCheckOpcodes_) && !wardenResponsePending_) {
-                LOG_WARNING("Warden: PAGE_A/PAGE_B detected - building response async to avoid main-loop stall");
+                LOG_DEBUG("Warden: PAGE_A/PAGE_B detected - building response async to avoid main-loop stall");
                 wardenPendingEncrypted_ = std::async(std::launch::async, [decrypted, ctx]() {
                     return buildWardenCheckResponse(decrypted, ctx, "async");
                 });

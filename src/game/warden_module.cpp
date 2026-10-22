@@ -1540,7 +1540,7 @@ bool WardenModule::initializeModule() {
     // Clear thread-local context - callbacks are only valid during init
     tl_activeModule = nullptr;
 
-    LOG_WARNING("WardenModule: Module initialization complete (callbacks wired)");
+    LOG_INFO("WardenModule: Module initialization complete (callbacks wired)");
     return true;
 }
 

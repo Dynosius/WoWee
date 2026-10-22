@@ -30,7 +30,8 @@ This guide covers common issues and solutions for WoWee.
 ### Disconnected a Minute or Two Into the World (Warden)
 - **Cause**: The server's anti-cheat (Warden) graded a check answer as a modified
   client. It closes the connection with no message, and some servers ban the account.
-  The log shows `Warden: Sent async CHEAT_CHECKS_RESULT` just before `connection closed by peer`
+  With `WOWEE_LOG_LEVEL=info`, the log shows `Warden: (async) Parsed N checks` just before
+  `connection closed by peer`; `WOWEE_LOG_LEVEL=debug` adds each check and its answer
 - **Solution**:
   1. Look for `WardenMemory: Loading PE image:` in the log. It must name the `WoW.exe`
      of the expansion you are playing, in `Data/expansions/<id>/misc`. A

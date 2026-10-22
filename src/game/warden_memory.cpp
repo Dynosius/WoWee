@@ -117,7 +117,7 @@ bool WardenMemory::parsePE(const std::vector<uint8_t>& fileData) {
                  " size=0x", copySize, std::dec);
     }
 
-    LOG_WARNING("WardenMemory: PE loaded - imageBase=0x", std::hex, imageBase_,
+    LOG_INFO("WardenMemory: PE loaded - imageBase=0x", std::hex, imageBase_,
                 " imageSize=0x", imageSize_, std::dec,
                 " (", numSections, " sections, ", fileData.size(), " bytes on disk)");
 
@@ -332,7 +332,7 @@ void WardenMemory::patchRuntimeGlobals() {
     // in the file. AzerothCore reads it (warden_checks 437, "Login State").
     if (fileBuild_ == 12340) {
         writeLE32(0x00AC3DAC, 4);
-        LOG_WARNING("WardenMemory: Patched 3.3.5a login state @0xac3dac");
+        LOG_DEBUG("WardenMemory: Patched 3.3.5a login state @0xac3dac");
     }
 
     // === Runtime global patches (applied unconditionally for all image variants) ===
@@ -385,7 +385,7 @@ void WardenMemory::patchRuntimeGlobals() {
         std::memcpy(image_.data() + 8, &sysInfo, 36);
     }
 
-    LOG_WARNING("WardenMemory: Patched SYSINFO chain @0x", std::hex, WARDEN_MODULE_PTR, std::dec);
+    LOG_DEBUG("WardenMemory: Patched SYSINFO chain @0x", std::hex, WARDEN_MODULE_PTR, std::dec);
 
     // EndScene chain
     // VMaNGOS reads g_theGxDevicePtr → device, then device+0x1FC for API kind
@@ -412,7 +412,7 @@ void WardenMemory::patchRuntimeGlobals() {
             writeLE32(addr, FAKE_VTABLE1);
         }
     }
-    LOG_WARNING("WardenMemory: Patched EndScene chain @0x", std::hex, GX_DEVICE_PTR, std::dec);
+    LOG_DEBUG("WardenMemory: Patched EndScene chain @0x", std::hex, GX_DEVICE_PTR, std::dec);
 
     // WorldEnables
     constexpr uint32_t WORLD_ENABLES = 0xC7B2A4;
@@ -420,7 +420,7 @@ void WardenMemory::patchRuntimeGlobals() {
                      | 0x8000 | 0x10000 | 0x100000 | 0x1000000 | 0x2000000
                      | 0x4000000 | 0x8000000 | 0x10000000;
     writeLE32(WORLD_ENABLES, enables);
-    LOG_WARNING("WardenMemory: Patched WorldEnables @0x", std::hex, WORLD_ENABLES, std::dec);
+    LOG_DEBUG("WardenMemory: Patched WorldEnables @0x", std::hex, WORLD_ENABLES, std::dec);
 
     // LastHardwareAction - must be a recent GetTickCount()-style timestamp
     // so the anti-AFK scan sees (currentTime - lastAction) < threshold.
@@ -429,7 +429,7 @@ void WardenMemory::patchRuntimeGlobals() {
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
     writeLE32(LAST_HARDWARE_ACTION, nowMs - 2000);
-    LOG_WARNING("WardenMemory: Patched LastHardwareAction @0x", std::hex, LAST_HARDWARE_ACTION, std::dec);
+    LOG_DEBUG("WardenMemory: Patched LastHardwareAction @0x", std::hex, LAST_HARDWARE_ACTION, std::dec);
 
     // Embed the 37-byte Warden module memcpy pattern in BSS so that
     // FIND_CODE_BY_HASH (PAGE_B) brute-force search can find it.
@@ -445,7 +445,7 @@ void WardenMemory::patchRuntimeGlobals() {
     uint32_t patRva = MEMCPY_PATTERN_VA - imageBase_;
     if (patRva + sizeof(kWardenMemcpyPattern) <= imageSize_) {
         std::memcpy(image_.data() + patRva, kWardenMemcpyPattern, sizeof(kWardenMemcpyPattern));
-        LOG_WARNING("WardenMemory: Embedded Warden memcpy pattern at 0x", std::hex, MEMCPY_PATTERN_VA, std::dec);
+        LOG_DEBUG("WardenMemory: Embedded Warden memcpy pattern at 0x", std::hex, MEMCPY_PATTERN_VA, std::dec);
     }
 }
 
@@ -456,7 +456,7 @@ void WardenMemory::patchTurtleWowBinary() {
 
     auto patchBytes = [&](uint32_t fileOffset, const std::vector<uint8_t>& bytes) {
         if (fileOffset + bytes.size() > imageSize_) {
-            LOG_WARNING("WardenMemory: Turtle patch at 0x", std::hex, fileOffset,
+            LOG_DEBUG("WardenMemory: Turtle patch at 0x", std::hex, fileOffset,
                         " exceeds image size, skipping");
             return;
         }
@@ -575,7 +575,7 @@ void WardenMemory::patchTurtleWowBinary() {
     patchString(0x45CCD8, "*.turtle-wow.org");
     patchString(0x45CC9C, "*.discord.gg");
 
-    LOG_WARNING("WardenMemory: Applied TurtlePatcher binary patches (build 7199)");
+    LOG_INFO("WardenMemory: Applied TurtlePatcher binary patches (build 7199)");
 }
 
 bool WardenMemory::readMemory(uint32_t va, uint8_t length, uint8_t* outBuf) const {
@@ -805,9 +805,9 @@ bool WardenMemory::loadFromFile(const std::string& exePath) {
         // Only apply TurtlePatcher patches if we loaded the vanilla exe.
         // The real Turtle WoW.exe (imageSize=0x906000) already has these bytes.
         patchTurtleWowBinary();
-        LOG_WARNING("WardenMemory: Applied Turtle patches to vanilla PE (imageSize=0x", std::hex, imageSize_, std::dec, ")");
+        LOG_INFO("WardenMemory: Applied Turtle patches to vanilla PE (imageSize=0x", std::hex, imageSize_, std::dec, ")");
     } else if (isTurtle_) {
-        LOG_WARNING("WardenMemory: Loaded native Turtle PE - skipping patches");
+        LOG_INFO("WardenMemory: Loaded native Turtle PE - skipping patches");
     }
     loaded_ = true;
     LOG_INFO("WardenMemory: Loaded PE image (", fileData.size(), " bytes on disk, ",
@@ -938,10 +938,10 @@ void WardenMemory::verifyWardenScanEntries() {
     }
 
     if (mismatches == 0) {
-        LOG_WARNING("WardenScan: All ", sizeof(entries)/sizeof(entries[0]),
+        LOG_INFO("WardenScan: All ", sizeof(entries)/sizeof(entries[0]),
                     " DB scan entries MATCH PE image");
     } else if (patched > 0) {
-        LOG_WARNING("WardenScan: Patched ", patched, "/", mismatches,
+        LOG_INFO("WardenScan: Patched ", patched, "/", mismatches,
                     " mismatched scan entries into PE image");
     } else {
         LOG_WARNING("WardenScan: ", mismatches, " / ", sizeof(entries)/sizeof(entries[0]),
@@ -975,7 +975,7 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
              image_.data() + hintOffset, patternLen,
              hmacOut, &hmacLen);
         if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
-            LOG_WARNING("WardenMemory: Code pattern found at hint RVA 0x", std::hex,
+            LOG_DEBUG("WardenMemory: Code pattern found at hint RVA 0x", std::hex,
                         hintOffset, std::dec, " (direct hit)");
             codePatternCache_[cacheKey] = true;
             return true;
@@ -996,7 +996,7 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
                      image_.data() + i, patternLen,
                      hmacOut, &hmacLen);
                 if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
-                    LOG_WARNING("WardenMemory: Code pattern found at RVA 0x", std::hex, i,
+                    LOG_DEBUG("WardenMemory: Code pattern found at RVA 0x", std::hex, i,
                                 std::dec, " (hint window, delta=", static_cast<int>(i) - static_cast<int>(hintOffset), ")");
                     codePatternCache_[cacheKey] = true;
                     return true;
@@ -1039,7 +1039,7 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
     }
 
     auto bruteStart = std::chrono::steady_clock::now();
-    LOG_WARNING("WardenMemory: Brute-force searching ", ranges.size(), " section(s), hint=0x",
+    LOG_DEBUG("WardenMemory: Brute-force searching ", ranges.size(), " section(s), hint=0x",
                 std::hex, hintOffset, std::dec, " patLen=", static_cast<int>(patternLen));
 
     size_t totalPositions = 0;
@@ -1054,7 +1054,7 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
             if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
                 auto elapsed = std::chrono::duration<float>(
                     std::chrono::steady_clock::now() - bruteStart).count();
-                LOG_WARNING("WardenMemory: Code pattern found at RVA 0x", std::hex,
+                LOG_DEBUG("WardenMemory: Code pattern found at RVA 0x", std::hex,
                             r.start + i, std::dec, " (searched ", totalPositions + i + 1,
                             " positions in ", elapsed, "s)");
                 codePatternCache_[cacheKey] = true;
@@ -1066,7 +1066,7 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
 
     auto elapsed = std::chrono::duration<float>(
         std::chrono::steady_clock::now() - bruteStart).count();
-    LOG_WARNING("WardenMemory: Code pattern NOT found after ", totalPositions, " positions in ",
+    LOG_DEBUG("WardenMemory: Code pattern NOT found after ", totalPositions, " positions in ",
                 ranges.size(), " section(s), took ", elapsed, "s");
     codePatternCache_[cacheKey] = false;
     return false;

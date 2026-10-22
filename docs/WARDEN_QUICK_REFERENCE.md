@@ -97,7 +97,7 @@ Key messages:
 - `WardenModule: Calling module entry point` - emulation running
 - `Warden: Loaded N CR entries` / `Warden: No usable .cr file` - whether hash requests can be answered from a table
 - `Warden: HASH_REQUEST answered by the module's own handler` - answered by emulation instead
-- `Warden: (sync) Parsed N checks` / `Warden: (async) Parsed N checks` - a check request was answered
+- `Warden: (sync) Parsed N checks` / `Warden: (async) Parsed N checks` - a check request was answered (info level; each check and the reply bytes are at debug level, `WOWEE_LOG_LEVEL=debug`)
 - `WardenMemory: Loading PE image: <path>` - which executable memory checks are read from
 - `WardenMemory: <path> is build N, not M` - the wrong executable; every memory check will fail
 - `WardenMemory: WoW.exe not found` - memory checks will answer "unmapped"

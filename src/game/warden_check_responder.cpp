@@ -236,7 +236,7 @@ std::vector<uint8_t> buildWardenCheckResponse(const std::vector<uint8_t>& reques
                 if (ctx.memory && ctx.memory->isLoaded() && ctx.memory->readMemory(offset, readLen, bytes.data())) {
                     std::string dump;
                     for (uint8_t b : bytes) dump += hex2(b) + " ";
-                    LOG_WARNING(tag, "MEM 0x", hex8(offset), " len=", (int)readLen,
+                    LOG_DEBUG(tag, "MEM 0x", hex8(offset), " len=", (int)readLen,
                                 moduleName.empty() ? "" : " module=\"" + moduleName + "\"",
                                 " -> [", dump, "]");
                     results.push_back(WARDEN_MEM_CHECK_SUCCESS);
@@ -278,7 +278,7 @@ std::vector<uint8_t> buildWardenCheckResponse(const std::vector<uint8_t>& reques
                         turtleFallback = true;
                     }
                 }
-                LOG_WARNING(tag, kCheckTypeNames[ct], " offset=0x", hex8(off), " patLen=", (int)patLen,
+                LOG_DEBUG(tag, kCheckTypeNames[ct], " offset=0x", hex8(off), " patLen=", (int)patLen,
                             " (", size, "b) found=", found ? "yes" : "no",
                             turtleFallback ? " (turtle-fallback)" : "");
                 pos += size;
@@ -305,7 +305,7 @@ std::vector<uint8_t> buildWardenCheckResponse(const std::vector<uint8_t>& reques
                         }
                     }
                 }
-                LOG_WARNING(tag, "MPQ \"", filePath.empty() ? "?" : filePath, "\" ", found ? "found" : "not found");
+                LOG_DEBUG(tag, "MPQ \"", filePath.empty() ? "?" : filePath, "\" ", found ? "found" : "not found");
                 if (found) {
                     results.push_back(0x00);
                     results.insert(results.end(), hash.begin(), hash.end());
@@ -326,7 +326,7 @@ std::vector<uint8_t> buildWardenCheckResponse(const std::vector<uint8_t>& reques
                 if (pos + 25 > checkEnd) { pos = checkEnd; break; }
                 pos += 24;
                 const std::string driver = resolveString(request[pos++]);
-                LOG_WARNING(tag, "DRIVER \"", driver.empty() ? "?" : driver, "\" not found");
+                LOG_DEBUG(tag, "DRIVER \"", driver.empty() ? "?" : driver, "\" not found");
                 results.push_back(kWardenScanNotFound);
                 break;
             }
@@ -340,7 +340,7 @@ std::vector<uint8_t> buildWardenCheckResponse(const std::vector<uint8_t>& reques
                     if (hmacSha1Matches(seed, m.name, seed + 4)) { match = &m; break; }
                 }
                 const bool loaded = match && match->loaded;
-                LOG_WARNING(tag, "MODULE \"", match ? match->name : "?", "\" ", loaded ? "found" : "not found");
+                LOG_DEBUG(tag, "MODULE \"", match ? match->name : "?", "\" ", loaded ? "found" : "not found");
                 results.push_back(loaded ? kWardenScanFound : kWardenScanNotFound);
                 break;
             }
@@ -372,8 +372,8 @@ std::vector<uint8_t> buildWardenCheckResponse(const std::vector<uint8_t>& reques
         }
         std::string dump;
         for (uint8_t b : results) dump += hex2(b) + " ";
-        LOG_WARNING(tag, "Parsed ", checkCount, " checks [", summary, "] resultSize=", results.size());
-        LOG_WARNING(tag, "RESPONSE_HEX [", dump, "]");
+        LOG_INFO(tag, "Parsed ", checkCount, " checks [", summary, "] resultSize=", results.size());
+        LOG_DEBUG(tag, "RESPONSE_HEX [", dump, "]");
     }
 
     // Checksum: XOR of the five little-endian words of SHA1(results)
