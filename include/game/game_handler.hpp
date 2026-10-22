@@ -1053,7 +1053,6 @@ public:
     // Threat
     using ThreatEntry = CombatHandler::ThreatEntry;
     const std::vector<ThreatEntry>* getThreatList(uint64_t unitGuid) const;
-    const std::vector<ThreatEntry>* getTargetThreatList() const;
 
     void castSpell(uint32_t spellId, uint64_t targetGuid = 0);
     void cancelCast();

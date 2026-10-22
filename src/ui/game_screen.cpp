@@ -644,7 +644,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     {
         auto cmds = chatPanel_.consumeSlashCommands();
         if (cmds.showInspect) openInspectWindow(gameHandler);
-        if (cmds.toggleThreat) combatUI_.showThreatWindow_ = !combatUI_.showThreatWindow_;
         // Both windows are gated on their element, so with either handed over
         // the slash command set a flag whose only reader is switched off.
         if (cmds.showBgScore) {
@@ -701,7 +700,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // windows drawing beside FrameXML's tabs.
     windowManager_.renderInstanceLockouts(gameHandler);
     windowManager_.renderEquipSetWindow(gameHandler);
-    combatUI_.renderThreatWindow(gameHandler);
     // The blips, whoever draws the ring around them.
     //
     // This was gated on the element the way every other pass is, and the

@@ -89,7 +89,6 @@ public:
 
     struct SlashCommands {
         bool showInspect   = false;
-        bool toggleThreat  = false;
         bool showBgScore   = false;
         bool showGmTicket  = false;
         bool showWho       = false;

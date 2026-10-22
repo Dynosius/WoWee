@@ -33,7 +33,6 @@ public:
     using SpellIconFn = std::function<VkDescriptorSet(uint32_t spellId, pipeline::AssetManager*)>;
 
     // ---- Toggle booleans (written by slash commands / escape handler / settings) ----
-    bool showThreatWindow_ = false;
 
     size_t raidWarnChatSeenCount_ = 0;
 
@@ -72,7 +71,6 @@ public:
         dpsMeterPos_ = ImVec2(x, y);
         dpsMeterUserPositioned_ = true;
     }
-    void renderThreatWindow(game::GameHandler& gameHandler);
 
     // UIServices injection (Phase B singleton breaking)
     void setServices(const UIServices& services) { services_ = services; }

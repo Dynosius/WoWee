@@ -2222,10 +2222,6 @@ const std::vector<GameHandler::ThreatEntry>* GameHandler::getThreatList(uint64_t
     return combatHandler_ ? combatHandler_->getThreatList(unitGuid) : nullptr;
 }
 
-const std::vector<GameHandler::ThreatEntry>* GameHandler::getTargetThreatList() const {
-    return targetGuid ? getThreatList(targetGuid) : nullptr;
-}
-
 bool GameHandler::isHostileAttacker(uint64_t guid) const {
     return combatHandler_ ? combatHandler_->isHostileAttacker(guid) : false;
 }

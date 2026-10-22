@@ -181,17 +181,6 @@ public:
     [[nodiscard]] std::string helpText() const override { return "Show BG scoreboard"; }
 };
 
-// --- /threat ---
-class ThreatCommand : public IChatCommand {
-public:
-    ChatCommandResult execute(ChatCommandContext& ctx) override {
-        ctx.panel.getSlashCmds().toggleThreat = true;
-        return {};
-    }
-    [[nodiscard]] std::vector<std::string> aliases() const override { return {"threat"}; }
-    [[nodiscard]] std::string helpText() const override { return "Toggle threat display"; }
-};
-
 // --- /combatlog, /cl ---
 class CombatLogCommand : public IChatCommand {
 public:
@@ -424,7 +413,6 @@ void registerMiscCommands(ChatCommandRegistry& reg) {
     reg.registerCommand(std::make_unique<RecordCommand>());
     reg.registerCommand(std::make_unique<TicketCommand>());
     reg.registerCommand(std::make_unique<ScoreCommand>());
-    reg.registerCommand(std::make_unique<ThreatCommand>());
     reg.registerCommand(std::make_unique<CombatLogCommand>());
     reg.registerCommand(std::make_unique<HelmCommand>());
     reg.registerCommand(std::make_unique<CloakCommand>());
