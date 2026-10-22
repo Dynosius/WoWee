@@ -13,7 +13,7 @@ Warden modules are native x86 Windows DLLs that the server encrypts and delivers
 2. Client verifies and decrypts: MD5 → RC4 → RSA-2048 signature verify → zlib decompress
 3. Unpacks the module image: relocations applied, imports resolved (Windows API hooks)
 4. Executes entry point via Unicorn Engine x86 emulator
-5. `HASH_REQUEST` is answered from a `.cr` file; with `WOWEE_WARDEN_ANSWER_HASH=1`, also from the built-in table for the TrinityCore/AzerothCore 3.3.5a module or the module's own handler run in the emulator. Off by default: answering makes the server send cheat checks, and a wrong check answer is penalised with a ban where an unanswered hash request is tolerated
+5. `HASH_REQUEST` is answered from a `.cr` file, the built-in table for the TrinityCore/AzerothCore 3.3.5a module, or the module's own handler run in the emulator. `WOWEE_WARDEN_ANSWER_HASH=0` leaves it unanswered instead: answering makes the server send cheat checks, and a wrong check answer is penalised with a ban where an unanswered hash request is tolerated. The answers are graded against AzerothCore's check list by `test_warden_check_grader`
 6. Client responds with check results via `CMSG_WARDEN_DATA` (0x2E7), built by `WardenHandler` from a `WoW.exe` image
 
 A signature mismatch does not stop the load. A realm that signs its own module can name its

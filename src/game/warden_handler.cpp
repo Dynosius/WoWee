@@ -28,14 +28,15 @@ namespace game {
 namespace {
 
 // Whether a hash request may be answered without a hand-placed .cr file -
-// from the built-in table or by the module itself. Off unless
-// WOWEE_WARDEN_ANSWER_HASH=1. Answering is what makes a server start sending
-// cheat checks, and a server penalises a wrong check answer with a ban, where
-// it tolerates an unanswered hash request. Until every check answer has been
-// verified against a server's own grading, silence is the safe default.
+// from the built-in table or by the module itself. On unless
+// WOWEE_WARDEN_ANSWER_HASH=0. Answering is what makes a server start sending
+// cheat checks, and a wrong check answer is penalised with a ban where an
+// unanswered hash request is tolerated - so the answers are graded against
+// AzerothCore's own check list in test_warden_check_grader, and this is the
+// switch back to silence should a server grade differently.
 bool wardenAnswerHashEnabled() {
     const char* env = std::getenv("WOWEE_WARDEN_ANSWER_HASH");
-    return env && std::string(env) == "1";
+    return !(env && std::string(env) == "0");
 }
 
 std::string asciiLower(std::string s) {
@@ -478,7 +479,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
             // --- No CR match: ask the module itself ---
             // The module computes its own reply and the keys the exchange
             // switches to, so where it runs its answer is the right one for
-            // any server. Only when opted in; see wardenAnswerHashEnabled.
+            // any server. Unless turned off; see wardenAnswerHashEnabled.
             {
                 uint8_t reply[20];
                 std::vector<uint8_t> rc4State;
