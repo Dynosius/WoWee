@@ -31,10 +31,10 @@ namespace {
 /// fails if they disagree. Seventeen rows outlived their element before that
 /// rule existed.
 ///
-/// Four elements are left drawing: the minimap, the world map, the zone text
-/// and the taxi picker. They are shared surfaces, where this client draws into
-/// a frame FrameXML owns rather than beside it, so this flag has no last one to
-/// turn off.
+/// Three elements are left drawing: the minimap, the world map and the taxi
+/// picker. They are shared surfaces, where this client draws into a frame
+/// FrameXML owns rather than beside it, so this flag has no last one to turn
+/// off.
 struct Entry {
     UiElement element;
     std::string_view name;
@@ -79,7 +79,7 @@ constexpr std::array<Entry, 52> kElements{{
     {UiElement::Petition,     "petition", false},
     {UiElement::Buffs,        "buffs", false},
     {UiElement::Durability,   "durability", false},
-    {UiElement::ZoneText,     "zonetext"},
+    {UiElement::ZoneText,     "zonetext", false},
     {UiElement::Trade,        "trade", false},
     {UiElement::ReadyCheck,   "readycheck", false},
     {UiElement::RaidWarning,  "raidwarning", false},
@@ -317,10 +317,6 @@ const Suppress kSuppress[] = {
         // look accounted for on every reading by eye.
         {UiElement::WorldMap,   "WorldMapFrame WorldMapDetailFrame "
                                 "WorldMapButton WorldMapZoneMinimapDropDown"},
-        // Both, because the sub-zone line is a separate frame that fades on its
-        // own - naming only the zone would leave "Trade District" announcing
-        // itself twice while "Stormwind City" announced itself once.
-        {UiElement::ZoneText,   "ZoneTextFrame SubZoneTextFrame"},
         // MinimapCluster carries the ring, the zoom buttons and the zone text,
         // so hiding it hides the rest. Naming only the ring left FrameXML's
         // minimap drawn beside this client's own.

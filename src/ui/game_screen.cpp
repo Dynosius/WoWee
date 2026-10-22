@@ -721,7 +721,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // - its menu buttons are routed here through ShowUIPanel - and this window
     // draws nothing unless something opened it, so leaving it out cost every
     // setting in it the moment the menu was handed over.
-    toastManager_.renderZoneText(gameHandler);
     renderWeatherOverlay(gameHandler);
 
     // Always, because this is the only thing that feeds the map its data and
