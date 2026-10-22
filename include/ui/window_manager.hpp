@@ -3,8 +3,7 @@
 // Owns all NPC interaction windows, popup dialogs, and misc
 // overlay UI: loot, gossip, quest, vendor, trainer, mail, bank,
 // auction house, barber, stable, taxi, escape menu, death screen,
-// instance lockouts, achievements, GM ticket, books, titles,
-// equipment sets, skills.
+// achievements, GM ticket, books, titles.
 // ============================================================
 #pragma once
 #include "ui/ui_services.hpp"
@@ -36,27 +35,7 @@ public:
     // Callback type for resolving spell icons (spellId, assetMgr) → VkDescriptorSet
     using SpellIconFn = std::function<VkDescriptorSet(uint32_t, pipeline::AssetManager*)>;
 
-    // ---- NPC interaction windows ----
-
-    // ---- Mail and banking ----
-
-    // ---- Popup / overlay windows ----
-    /// The game handler is only for the Help button, which has to reach
-    /// FrameXML's help frame when that element is handed over.
-    void renderInstanceLockouts(game::GameHandler& gameHandler);
-    void renderEquipSetWindow(game::GameHandler& gameHandler);
-
     // ---- State owned by this manager ----
-
-    // Instance lockouts
-    bool showInstanceLockouts_ = false;
-
-    // Titles
-
-    // Equipment Sets
-    bool showEquipSetWindow_ = false;
-
-    // GM Ticket
 
     // Death screen
     static constexpr float kForcedReleaseSec = 360.0f;

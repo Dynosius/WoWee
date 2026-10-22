@@ -698,8 +698,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // list, the who list and the guild roster. Only the friends list was gated
     // on this side, so handing social over left two of this client's three
     // windows drawing beside FrameXML's tabs.
-    windowManager_.renderInstanceLockouts(gameHandler);
-    windowManager_.renderEquipSetWindow(gameHandler);
     // The blips, whoever draws the ring around them.
     //
     // This was gated on the element the way every other pass is, and the
