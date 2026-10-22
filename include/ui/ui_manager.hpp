@@ -95,6 +95,11 @@ public:
 
     void processEvent(const SDL_Event& event);
 
+    /// Work the interface scale out again after the window changed size or
+    /// moved to another display - a fold, a rotation, split screen - and bring
+    /// the style and text to it. Nothing happens when it comes out the same.
+    void refreshInterfaceScale();
+
     /**
      * Get screen instances for callback setup
      */
@@ -127,6 +132,9 @@ private:
     /// drawn. Decided once at start-up; the style and the font atlas both use
     /// it, and they have to agree. 1.0 off Android.
     float interfaceScale_ = 1.0f;
+    /// What the style is scaled to right now. The font atlas stays at
+    /// interfaceScale_, the figure it was built for, and is stretched to this.
+    float appliedScale_ = 1.0f;
     std::vector<uint8_t> clientFontData_;
     /// A face with Chinese, Japanese and Korean in it, merged under every
     /// interface face. Held here because the atlas reads it for as long as it

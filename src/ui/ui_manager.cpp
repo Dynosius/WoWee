@@ -6,6 +6,7 @@
 
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -114,6 +115,7 @@ bool UIManager::initialize(core::Window* win) {
     // Fonts are scaled where the atlas is built, so they stay crisp rather than
     // being magnified from a desktop-sized atlas.
     interfaceScale_ = interfaceScale(window->getSDLWindow());
+    appliedScale_ = interfaceScale_;
     if (const float scale = interfaceScale_; scale > 1.0f) {
         style.ScaleAllSizes(scale);
         LOG_INFO("Interface scaled by ", scale, " for this display");
@@ -573,6 +575,19 @@ void UIManager::finishImGuiFrame() {
     }
 
     ImGui::Render();
+}
+
+void UIManager::refreshInterfaceScale() {
+    if (!window || !ImGui::GetCurrentContext()) return;
+    const float scale = interfaceScale(window->getSDLWindow());
+    if (std::abs(scale - appliedScale_) < 0.01f) return;
+    ImGuiStyle& style = ImGui::GetStyle();
+    // From what is applied, so the sizes never compound, and the text from the
+    // scale the atlas was built at.
+    style.ScaleAllSizes(scale / appliedScale_);
+    style.FontScaleDpi = scale / interfaceScale_;
+    LOG_WARNING("Interface rescaled from ", appliedScale_, " to ", scale, " for the new display");
+    appliedScale_ = scale;
 }
 
 void UIManager::processEvent(const SDL_Event& event) {

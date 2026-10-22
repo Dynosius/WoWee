@@ -67,14 +67,23 @@ void TouchControls::handleEvent(const SDL_Event& event, int windowWidth, int win
     const float y = event.tfinger.y * h;
     const SDL_FingerID id = event.tfinger.fingerID;
 
+    // The zone is a fraction of what the display leaves usable, not of the
+    // whole panel: a fraction of the panel put its top and its edge under the
+    // gesture bar and the cutout on a phone that has them.
+    const bool haveSafe = safe_.w > 0 && safe_.h > 0;
+    const float zoneLeft = haveSafe ? static_cast<float>(safe_.x) : 0.0f;
+    const float zoneW = haveSafe ? static_cast<float>(safe_.w) : w;
+    const float zoneTop = haveSafe ? static_cast<float>(safe_.y) : 0.0f;
+    const float zoneH = haveSafe ? static_cast<float>(safe_.h) : h;
+
     if (event.type == SDL_EVENT_FINGER_DOWN) {
         if (ImGui::GetIO().WantCaptureMouse || frameXmlOwnsMouse() ||
             ImGui::GetIO().WantTextInput || interfaceTakingTypedInput()) return;
         // The interface is asked first, so a bag or an action button drawn over
         // the corner still gets the press. A stick that ate those would be
         // maddening, and the corner is only a default.
-        if (stickFingerId_ == kNoFinger && x < w * kStickZoneWidth &&
-            y > h * kStickZoneTop && !ImGui::GetIO().WantCaptureMouse) {
+        if (stickFingerId_ == kNoFinger && x < zoneLeft + zoneW * kStickZoneWidth &&
+            y > zoneTop + zoneH * kStickZoneTop && !ImGui::GetIO().WantCaptureMouse) {
             LOG_DEBUG("touch: stick claimed at ", x, ",", y);
             stickFingerId_ = id;
             stickOriginX_ = x;

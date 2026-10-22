@@ -43,6 +43,15 @@ public:
     /// should face where the camera does.
     [[nodiscard]] bool isSteering() const { return lookFingerId_ != kNoFinger && lookMoved_; }
 
+    /// The part of the window the display leaves usable - clear of a cutout,
+    /// rounded corners and the gesture bar - in window coordinates. The stick's
+    /// zone is measured inside it. An empty rectangle means the whole window.
+    void setSafeArea(const SDL_Rect& safe) { safe_ = safe; }
+
+    /// The display's density changed under the controls: a fold, or the window
+    /// moving to another screen. The stick's size is worked out again.
+    void displayChanged() { cachedRadius_ = 0.0f; reset(); }
+
     void handleEvent(const SDL_Event& event, int windowWidth, int windowHeight);
 
     /// Applies the stick to the movement keys. Once a frame, after events.
@@ -88,6 +97,7 @@ private:
     [[nodiscard]] static bool held(float axis, float threshold, bool wasOn);
 
     bool inWorld_ = false;
+    SDL_Rect safe_{0, 0, 0, 0};
 
     SDL_FingerID stickFingerId_ = kNoFinger;
     float stickOriginX_ = 0.0f, stickOriginY_ = 0.0f;

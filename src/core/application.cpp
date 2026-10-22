@@ -1510,7 +1510,28 @@ void Application::run() {
             {
                 int tw = 0, th = 0;
                 if (window) SDL_GetWindowSize(window->getSDLWindow(), &tw, &th);
+                SDL_Rect safe{};
+                if (window && SDL_GetWindowSafeArea(window->getSDLWindow(), &safe)) {
+                    ui::touchControls().setSafeArea(safe);
+                }
                 ui::touchControls().handleEvent(event, tw, th);
+            }
+
+            // A fold, a rotation or a move to another display changes what the
+            // window is and how dense it is. The swapchain follows the pixel
+            // size, the interface follows the density, and a finger held
+            // through it is no longer where it was.
+            if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
+                event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED ||
+                event.type == SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED ||
+                event.type == SDL_EVENT_WINDOW_SAFE_AREA_CHANGED ||
+                event.type == SDL_EVENT_WINDOW_RESIZED) {
+                if (window && window->getVkContext() &&
+                    event.type != SDL_EVENT_WINDOW_SAFE_AREA_CHANGED) {
+                    window->getVkContext()->markSwapchainDirty();
+                }
+                if (uiManager) uiManager->refreshInterfaceScale();
+                ui::touchControls().displayChanged();
             }
 
             // The activity going to the background takes the native window with
