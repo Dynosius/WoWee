@@ -1558,6 +1558,10 @@ target_include_directories(test_update_check SYSTEM PRIVATE
     ${CMAKE_SOURCE_DIR}/extern/nlohmann
 )
 target_link_libraries(test_update_check PRIVATE catch2_main OpenSSL::SSL OpenSSL::Crypto)
+if(WIN32)
+    # https_get.cpp reads the Windows root certificate store.
+    target_link_libraries(test_update_check PRIVATE crypt32)
+endif()
 wowee_test_link_glm(test_update_check)
 add_test(NAME update_check COMMAND test_update_check)
 register_test_target(test_update_check)
