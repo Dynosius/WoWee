@@ -774,10 +774,13 @@ void WidgetTree::layout(float pixelW, float pixelH) {
     // no anchors is not displayed. Its own shown flag still decides whether
     // anything under it is, which is the whole point of it being a frame.
     if (Widget* ui = get(uiParentId_); ui && ui != &rootW) {
-        ui->left = 0.0f;
-        ui->bottom = 0.0f;
-        ui->rectW = screenW;
-        ui->rectH = screenH;
+        // Inside the safe area, which is nothing on a screen with none.
+        const float inL = safeLeft_ / uiScale_;
+        const float inB = safeBottom_ / uiScale_;
+        ui->left = inL;
+        ui->bottom = inB;
+        ui->rectW = std::max(screenW - inL - safeRight_ / uiScale_, 1.0f);
+        ui->rectH = std::max(screenH - inB - safeTop_ / uiScale_, 1.0f);
         ui->visibleChain = rootW.visible && ui->shown;
         ui->visible = ui->visibleChain;
         ui->effStrata = ui->strata;

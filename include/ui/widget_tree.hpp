@@ -876,6 +876,23 @@ public:
     }
     [[nodiscard]] float userScale() const { return userScale_; }
 
+    /// How far the screen's usable area is brought in from each edge, in the
+    /// same pixels layout() is given: a display cutout, rounded corners and the
+    /// gesture bar are drawn under by a client that fills the panel. UIParent
+    /// is placed inside them, so everything anchored to it follows; the screen
+    /// root keeps the whole panel for what is meant to cover it.
+    void setSafeInsets(float left, float top, float right, float bottom) {
+        if (left == safeLeft_ && top == safeTop_ && right == safeRight_ &&
+            bottom == safeBottom_) {
+            return;
+        }
+        safeLeft_ = left;
+        safeTop_ = top;
+        safeRight_ = right;
+        safeBottom_ = bottom;
+        markLayoutDirty();
+    }
+
     /// The canvas height the interface lays out in. The scale a screen of a
     /// given pixel height gets is pixelHeight / this, times the user's own.
     static constexpr float kInterfaceHeight = 768.0f;
@@ -1039,6 +1056,10 @@ public:
 private:
 
     /// The size the last full pass ran at, so an on-demand one can match it.
+    float safeLeft_ = 0.0f;
+    float safeTop_ = 0.0f;
+    float safeRight_ = 0.0f;
+    float safeBottom_ = 0.0f;
     float lastPixelW_ = 0.0f;
     float lastPixelH_ = 0.0f;
     /// layout() moves widgets, and moving a widget raises the flag. Without

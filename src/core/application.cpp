@@ -4808,6 +4808,28 @@ void Application::render() {
             // showed through the bags and the auction house.
             });
             runRenderStage("addonWidgets/layout", [&] {
+#ifdef __ANDROID__
+            // The panel is filled edge to edge, cutout and rounded corners
+            // included. Keep the interface out of what they cover.
+            if (window) {
+                SDL_Window* sdl = window->getSDLWindow();
+                SDL_Rect safe{};
+                int w = 0, h = 0;
+                SDL_GetWindowSize(sdl, &w, &h);
+                if (SDL_GetWindowSafeArea(sdl, &safe) && safe.w > 0 && safe.h > 0) {
+                    static bool logged = false;
+                    if (!logged) {
+                        logged = true;
+                        LOG_WARNING("Safe area ", safe.x, ",", safe.y, " ", safe.w, "x", safe.h,
+                                    " of a ", w, "x", h, " window");
+                    }
+                    engine->widgets().setSafeInsets(
+                        static_cast<float>(safe.x), static_cast<float>(safe.y),
+                        static_cast<float>(std::max(w - (safe.x + safe.w), 0)),
+                        static_cast<float>(std::max(h - (safe.y + safe.h), 0)));
+                }
+            }
+#endif
             widgetRenderer_.layout(engine->widgets(), io.DisplaySize.x, io.DisplaySize.y);
             });
 
