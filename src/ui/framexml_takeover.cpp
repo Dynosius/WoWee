@@ -31,10 +31,10 @@ namespace {
 /// fails if they disagree. Seventeen rows outlived their element before that
 /// rule existed.
 ///
-/// Five elements are left drawing: the minimap, the world map, the zone text,
-/// the taxi picker and the settings panel behind the game menu. The first four
-/// are shared surfaces, where this client draws into a frame FrameXML owns
-/// rather than beside it, so this flag has no last one to turn off.
+/// Four elements are left drawing: the minimap, the world map, the zone text
+/// and the taxi picker. They are shared surfaces, where this client draws into
+/// a frame FrameXML owns rather than beside it, so this flag has no last one to
+/// turn off.
 struct Entry {
     UiElement element;
     std::string_view name;
@@ -89,7 +89,7 @@ constexpr std::array<Entry, 52> kElements{{
     {UiElement::Taxi,         "taxi"},
     {UiElement::Stable,       "stable", false},
     {UiElement::Book,         "book", false},
-    {UiElement::GameMenu,          "gamemenu"},
+    {UiElement::GameMenu,          "gamemenu", false},
     {UiElement::Help,              "help", false},
     {UiElement::BattlegroundScore, "bgscore", false},
     {UiElement::Totems,       "totems", false},
@@ -311,12 +311,6 @@ const Suppress kSuppress[] = {
         // this, talking to a flight master put TaxiFrame over this client's
         // map, each with its own set of pins.
         {UiElement::Taxi,       "TaxiFrame"},
-        // The menu itself is FrameXML's. The three options frames behind it
-        // are not: its Video, Sound and Interface buttons are routed to this
-        // client's settings panel, because FrameXML's own are shells and the
-        // sixty-odd settings live here.
-        {UiElement::GameMenu,   "InterfaceOptionsFrame "
-                                "VideoOptionsFrame AudioOptionsFrame"},
         // Found by the unaccounted-element check on its first run. The world
         // map was neither handed over nor hidden, so FrameXML's drew over this
         // client's own. It appears in the check list, which is what made it
@@ -564,7 +558,12 @@ const Check kChecks[] = {
         {UiElement::Taxi,         "TaxiFrame TaxiRouteMap"},
         {UiElement::Stable,       "PetStableFrame"},
         {UiElement::Book,         "ItemTextFrame ItemTextPageText"},
-        {UiElement::GameMenu,     "GameMenuFrame GameMenuButtonLogout"},
+        // The options frames behind the menu are FrameXML's as well: the Video,
+        // Sound and Interface buttons open them, and the client's own settings
+        // are a category of the Interface one. After GameMenuFrame, so a 1.12
+        // interface without them does not hand the menu back.
+        {UiElement::GameMenu,     "GameMenuFrame GameMenuButtonLogout InterfaceOptionsFrame "
+                                  "VideoOptionsFrame AudioOptionsFrame"},
         {UiElement::Help,         "HelpFrame TicketStatusFrame"},
         {UiElement::Totems,       "TotemFrame MultiCastActionBarFrame"},
         {UiElement::UiErrors,     "UIErrorsFrame"},

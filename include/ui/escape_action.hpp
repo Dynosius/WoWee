@@ -28,7 +28,6 @@ enum class EscapeAction {
     None,
     /// Put a picked-up item back where it came from.
     ReturnHeldItem,
-    CloseSettingsWindow,
     CancelCast,
     CloseLoot,
     CloseGossip,
@@ -73,11 +72,6 @@ struct EscapeState {
 
     /// An item is on the cursor, picked up from a bag or a vendor.
     bool holdingItem = false;
-
-    /// This client's own settings window, which is drawn over everything.
-    /// The only window of its own it has left: the game menu beside it was
-    /// handed to the interface.
-    bool settingsWindowShown = false;
 
     // Things the server knows about. Each of these has to be closed through
     // the client so the closing packet is sent - hiding the frame instead

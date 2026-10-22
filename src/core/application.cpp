@@ -537,9 +537,6 @@ bool Application::initialize() {
         luaSvc.audioCoordinator  = audioCoordinator_.get();
         luaSvc.expansionRegistry = expansionRegistry_.get();
         luaSvc.requestReloadUI = [this]() { reloadUiPending_ = true; };
-        luaSvc.openSettings = [uim = uiManager.get()](const std::string& tab) {
-            if (uim) uim->getGameScreen().openSettings(tab.empty() ? nullptr : tab.c_str());
-        };
         // FrameXML's options panels, driving this client's own settings.
         //
         // One table rather than a hook per setting. Every row is a CVar the
@@ -871,10 +868,6 @@ bool Application::initialize() {
                 // Not addUIError: that reports by firing an event, which runs
                 // script, which is how a script error came to report itself.
                 if (gh) gh->addScriptError(err);
-            });
-            // The game-menu button opens this client's settings panel.
-            addonManager_->getLuaEngine()->setOpenSettingsCallback([this] {
-                if (auto* uim = uiManager.get()) uim->getGameScreen().openSettings();
             });
             // No second announcement of a chat message.
             //

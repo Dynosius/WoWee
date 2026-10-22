@@ -5851,18 +5851,6 @@ void LuaEngine::registerCoreAPI() {
     lua_pushcfunction(L_, lua_wowee_warn);
     lua_setglobal(L_, "__WoweeWarn");
 
-    // The micro menu's game-menu button reaches this client's own settings.
-    // GameMenuFrame is suppressed, so ToggleGameMenu had nothing to show and
-    // the button did nothing at all; which interface owns that panel is a
-    // decision rather than a gap, and this is the decision.
-    lua_pushlightuserdata(L_, this);
-    lua_pushcclosure(L_, [](lua_State* L) -> int {
-        auto* self = static_cast<LuaEngine*>(lua_touserdata(L, lua_upvalueindex(1)));
-        if (self && self->openSettingsCallbackRef()) self->openSettingsCallbackRef()();
-        return 0;
-    }, 1);
-    lua_setglobal(L_, "__WoweeOpenClientSettings");
-
     // Run the deferred OnTextChanged queue now rather than at the next frame.
     //
     // The frame loop drains this; the headless runner has no frame loop, and

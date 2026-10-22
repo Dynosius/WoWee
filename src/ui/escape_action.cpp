@@ -19,7 +19,6 @@ EscapeAction resolveEscape(const EscapeState& s) {
     // left open to put it back into. Escape is the way out of a held item in
     // WoW, and it was the one thing this chain could not do.
     if (s.holdingItem)             return EscapeAction::ReturnHeldItem;
-    if (s.settingsWindowShown)     return EscapeAction::CloseSettingsWindow;
     // A cast in progress goes before any window: Escape cancelling a cast is
     // what the key is most often for, and a window that happens to be open
     // should not eat it.
@@ -60,7 +59,6 @@ const char* escapeActionName(EscapeAction action) {
     switch (action) {
         case EscapeAction::None:                    return "nothing";
         case EscapeAction::ReturnHeldItem:          return "put the held item back";
-        case EscapeAction::CloseSettingsWindow:     return "close the settings window";
         case EscapeAction::CancelCast:              return "cancel the cast";
         case EscapeAction::CloseLoot:               return "close loot";
         case EscapeAction::CloseGossip:             return "close gossip";

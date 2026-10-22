@@ -37,21 +37,6 @@ namespace ui {
  */
 class GameScreen {
 public:
-    /// Open this client's own settings window.
-    ///
-    /// Reached from the original interface's game-menu button, which has
-    /// nothing of its own to show while GameMenuFrame is suppressed.
-    /// Open the settings window, optionally on a named tab.
-    ///
-    /// FrameXML's game menu routes its Video, Sound and Interface buttons here.
-    /// Its own options frames are shells - this client's panel is where the
-    /// sixty-odd settings actually live, so handing the menu over must not hand
-    /// the settings over with it.
-    void openSettings(const char* tab = nullptr) {
-        settingsPanel_.showSettingsWindow = true;
-        if (tab) settingsPanel_.requestedTab_ = tab;
-    }
-
     /// Put the inspect window up, whichever interface draws it.
     ///
     /// Seven places used to set a flag behind this client's own window and its

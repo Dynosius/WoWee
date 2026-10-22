@@ -62,20 +62,18 @@ TEST_CASE("A press the interface's edit box already took does nothing more",
     // over, and must not cancel a cast either.
     s.casting = true;
     s.vendorOpen = true;
-    s.settingsWindowShown = true;
     CHECK(resolveEscape(s) == EscapeAction::None);
 
     // With the flag clear the same state resolves as it always did, so this
     // guard cannot quietly disable the chain.
     s.interfaceConsumedKey = false;
-    CHECK(resolveEscape(s) == EscapeAction::CloseSettingsWindow);
+    CHECK(resolveEscape(s) == EscapeAction::CancelCast);
 }
 
 TEST_CASE("Each window closes itself when it is the only one open", "[escape]") {
     // One case per branch, so a branch that stops matching says which.
     struct Case { bool EscapeState::*flag; EscapeAction want; const char* what; };
     static const Case kCases[] = {
-        {&EscapeState::settingsWindowShown,   EscapeAction::CloseSettingsWindow,     "settings"},
         {&EscapeState::casting,               EscapeAction::CancelCast,              "casting"},
         {&EscapeState::lootOpen,              EscapeAction::CloseLoot,               "loot"},
         {&EscapeState::gossipOpen,            EscapeAction::CloseGossip,             "gossip"},
@@ -97,22 +95,9 @@ TEST_CASE("Each window closes itself when it is the only one open", "[escape]") 
         INFO("only open: " << c.what);
         CHECK(resolveEscape(s) == c.want);
     }
-    // Fifteen, and the count is asserted: a branch added without a case here
+    // Fourteen, and the count is asserted: a branch added without a case here
     // would be untested and would look tested.
-    CHECK(sizeof(kCases) / sizeof(kCases[0]) == 15u);
-}
-
-TEST_CASE("This client's own window is closed before anything under it",
-          "[escape]") {
-    // The settings window draws over everything. With it up, Escape has to
-    // take it and not the vendor behind it - otherwise the key closes a window
-    // the player cannot see the effect of while the one they are looking at
-    // stays.
-    EscapeState s;
-    s.vendorOpen = true;
-    s.mailboxOpen = true;
-    s.settingsWindowShown = true;
-    CHECK(resolveEscape(s) == EscapeAction::CloseSettingsWindow);
+    CHECK(sizeof(kCases) / sizeof(kCases[0]) == 14u);
 }
 
 TEST_CASE("A cast in progress beats any window that happens to be open",
@@ -164,9 +149,6 @@ TEST_CASE("A held item is put back before any window is closed", "[escape]") {
     CHECK(resolveEscape(s) == EscapeAction::ReturnHeldItem);
 
     s.vendorOpen = true;
-    CHECK(resolveEscape(s) == EscapeAction::ReturnHeldItem);
-
-    s.settingsWindowShown = true;
     CHECK(resolveEscape(s) == EscapeAction::ReturnHeldItem);
 
     // ...but a press already spent on an edit box is still spent.

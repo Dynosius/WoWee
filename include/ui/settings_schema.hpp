@@ -105,27 +105,6 @@ struct SettingDesc {
     const char* after = "";
 };
 
-/// Whether `enabledWhen` is satisfied, given a way to read the other setting.
-///
-/// Shared so that the settings window and the options panels cannot disagree
-/// about when a control is live - the point of the field is that there is one
-/// answer, and two readers of it.
-template <typename ReadSetting>
-bool settingEnabled(const SettingDesc& desc, ReadSetting read) {
-    const std::string test = desc.enabledWhen;
-    if (test.empty()) return true;
-    const std::size_t bang = test.find("!=");
-    if (bang != std::string::npos) {
-        return read(test.substr(0, bang)) != test.substr(bang + 2);
-    }
-    const std::size_t eq = test.find('=');
-    if (eq != std::string::npos) {
-        return read(test.substr(0, eq)) == test.substr(eq + 1);
-    }
-    const std::string value = read(test);
-    return !value.empty() && value != "0";
-}
-
 /// A setting's value as a string, the way a CVar carries one.
 ///
 /// A whole number with no decimal point, a fraction without the trailing zeros.

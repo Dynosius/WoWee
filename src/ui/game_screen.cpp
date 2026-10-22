@@ -188,7 +188,6 @@ void GameScreen::setResolutionIndex(int index) {
     if (index < 0 || index >= kNumDisplayResolutions) return;
     // Asked for what is already chosen: the panel replaying its value on Okay.
     if (index == getResolutionIndex()) return;
-    settingsPanel_.pendingResIndex = index;
     settingsPanel_.pendingResolutionWidth  = kDisplayResolutions[index][0];
     settingsPanel_.pendingResolutionHeight = kDisplayResolutions[index][1];
     if (services_.window)
@@ -722,7 +721,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // - its menu buttons are routed here through ShowUIPanel - and this window
     // draws nothing unless something opened it, so leaving it out cost every
     // setting in it the moment the menu was handed over.
-    settingsPanel_.renderSettingsWindow(chatPanel_, [this]() { saveSettings(); });
     toastManager_.renderZoneText(gameHandler);
     renderWeatherOverlay(gameHandler);
 
@@ -1364,7 +1362,6 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             // Capture was checked per source by the manager. A consumed
             // keyboard Escape must not swallow a simultaneous controller B.
             st.interfaceConsumedKey  = false;
-            st.settingsWindowShown   = settingsPanel_.showSettingsWindow;
             // Either cursor. With the bags handed over an item is picked up
             // through FrameXML's, and Escape has to put that one down too -
             // this read only the bag window's, so Escape opened the menu with
@@ -1401,9 +1398,6 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             // One line per press, and Escape is not a key anyone holds down.
             LOG_WARNING("Escape: ", escapeActionName(action));
             switch (action) {
-                case EscapeAction::CloseSettingsWindow:
-                    settingsPanel_.showSettingsWindow = false;
-                    break;
                 case EscapeAction::CancelCast:             gameHandler.cancelCast(); break;
                 case EscapeAction::CloseLoot:              gameHandler.closeLoot(); break;
                 case EscapeAction::CloseGossip:            gameHandler.closeGossip(); break;

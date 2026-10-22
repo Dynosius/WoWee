@@ -15,7 +15,6 @@ namespace audio { class AudioCoordinator; }
 namespace ui {
 
 class InventoryScreen;
-class ChatPanel;
 struct ChatSettings;
 
 
@@ -41,16 +40,10 @@ public:
     /// shows. Call it once the renderer is wired.
     void applyLoadedSettings();
 
-    bool showSettingsWindow = false;
-    /// Which tab to jump to on the next draw, set by whoever opened the window.
-    /// Cleared once honoured, so a later click on a tab is not fought over.
-    std::string requestedTab_;
-    bool settingsInit = false;
 
     // ---- Pending video / graphics settings ----
     bool pendingFullscreen = false;
     bool pendingVsync = true;
-    int pendingResIndex = 0;
     int pendingResolutionWidth = 1920;
     int pendingResolutionHeight = 1080;
     bool displaySettingsLoaded_ = false;
@@ -301,9 +294,6 @@ public:
 
     // ---- Public methods ----
 
-    /// Render the settings window (call from GameScreen::render)
-    void renderSettingsWindow(ChatPanel& chatPanel, const std::function<void()>& saveCallback);
-
     /// Apply audio volume levels to all audio coordinator sound managers
     void applyAudioVolumes(audio::AudioCoordinator* ac);
 
@@ -321,28 +311,10 @@ public:
 
     /// Push a setting that has just changed at the thing it affects.
     ///
-    /// The settings window does this at each slider. A change arriving from
-    /// FrameXML's options or the Wowee panel comes through setSettingValue
-    /// instead, and without this it would update the number, save it, and
-    /// change nothing on screen.
+    /// A change arriving from FrameXML's options or the Wowee panel comes
+    /// through setSettingValue, and without this it would update the number,
+    /// save it, and change nothing on screen.
     void applySettingSideEffects(const std::string& key);
-
-    /// Draw every setting the schema files under `category`, as ImGui
-    /// controls, with a heading wherever the section changes.
-    ///
-    /// The label, the range, the choices and the hover text all come from the
-    /// schema - the same rows the interface's options panels are built from -
-    /// so the two windows cannot end up describing one setting differently, and
-    /// a setting added to the schema appears in both.
-    void drawSchemaCategory(const char* category, const std::function<void()>& saveCallback);
-
-    /// Put every setting in `category` back to what the schema says it is when
-    /// nobody has chosen. A null category restores all of them.
-    ///
-    /// One list rather than one per restore button - there were three, and each
-    /// of them was free to disagree with the value the client actually starts
-    /// with, which is the same list a fourth time.
-    void restoreSchemaDefaults(const char* category);
 
     /// Apply the persisted global ImGui window scale without compounding ratios.
     void applyWindowUiScale();
@@ -361,14 +333,7 @@ private:
     UIServices services_;  // Injected service references
     ChatSettings* chatSettings_ = nullptr;      // Owned by ChatPanel, not by this
     float appliedWindowUiScale_ = 1.0f;
-    bool windowUiScaleEditing_ = false;
 
-    // Settings tab rendering
-    void renderSettingsInterfaceTab(const std::function<void()>& saveCallback);
-    void renderSettingsGameplayTab(const std::function<void()>& saveCallback);
-    void renderSettingsControlsTab(const std::function<void()>& saveCallback);
-    void renderSettingsAudioTab(std::function<void()> saveCallback);
-    void renderSettingsAboutTab();
     void applyGraphicsPreset(GraphicsPreset preset);
     void updateGraphicsPresetFromCurrentSettings();
 };

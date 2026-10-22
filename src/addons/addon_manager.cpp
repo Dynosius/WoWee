@@ -768,19 +768,6 @@ bool AddonManager::loadFrameXml(const std::string& frameXmlDir) {
             LOG_WARNING("FrameXML: ", filename, " took ", ms, "ms");
         }
     }
-    // Screen insets the panel manager reads straight off UIParent. The real
-    // client supplies these; FrameXML only ever reads them, and
-    // UIParentManageFramePositions adds them to a coordinate on the next line,
-    // so absent they are arithmetic on nil the first time a panel opens.
-    //
-    // All six of them, because setting one wakes the panel manager and it then
-    // reads the rest: seeding only the two offsets moved the failure from
-    // LEFT_OFFSET to DEFAULT_FRAME_WIDTH one call deeper. The widths are
-    // Blizzard's own defaults for a standard panel.
-    luaEngine_.executeString(
-        std::string("__WoweeOwnsGameMenu = ") +
-        (ui::frameXmlOwns(ui::UiElement::GameMenu) ? "true" : "false") + "\n");
-
     // The colour of every kind of chat message, which nothing had ever sent.
     //
     // chatframe.lua builds ChatTypeInfo with sticky and flashTab and no colour
@@ -1067,20 +1054,6 @@ bool AddonManager::loadFrameXml(const std::string& frameXmlDir) {
         "  end)\n"
         "end\n");
 
-    // The game-menu button opens this client's settings.
-    //
-    // ToggleGameMenu is FrameXML's own function and it shows GameMenuFrame,
-    // which is suppressed - so the button did nothing at all. Replaced rather
-    // than hooked, and only while this client owns that panel: once the menu is
-    // FrameXML's, the original is drawn and should be the one that answers.
-    //
-    // After FrameXML has loaded, because a definition written before it would
-    // simply be overwritten by uiparent.lua.
-    luaEngine_.executeString(
-        "if not __WoweeOwnsGameMenu and __WoweeOpenClientSettings then\n"
-        "  ToggleGameMenu = function() __WoweeOpenClientSettings() end\n"
-        "end\n");
-
     // Where FrameXML's own chat output goes when this client owns the chat.
     //
     // Twenty-nine places write through DEFAULT_CHAT_FRAME:AddMessage - the
@@ -1154,7 +1127,15 @@ bool AddonManager::loadFrameXml(const std::string& frameXmlDir) {
         "  end\n"
         "end\n");
 
-
+    // Screen insets the panel manager reads straight off UIParent. The real
+    // client supplies these; FrameXML only ever reads them, and
+    // UIParentManageFramePositions adds them to a coordinate on the next line,
+    // so absent they are arithmetic on nil the first time a panel opens.
+    //
+    // All six of them, because setting one wakes the panel manager and it then
+    // reads the rest: seeding only the two offsets moved the failure from
+    // LEFT_OFFSET to DEFAULT_FRAME_WIDTH one call deeper. The widths are
+    // Blizzard's own defaults for a standard panel.
     luaEngine_.executeString(
         "if UIParent and UIParent.SetAttribute then\n"
         "  local defaults = {\n"
