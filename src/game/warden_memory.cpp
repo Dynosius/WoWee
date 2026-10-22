@@ -814,8 +814,10 @@ bool WardenMemory::loadFromFile(const std::string& exePath) {
              imageSize_, " bytes virtual)");
 
     // Verify all known warden_scans MEM_CHECK entries against our PE image.
-    // This checks the exact bytes the server will memcmp against.
-    verifyWardenScanEntries();
+    // This checks the exact bytes the server will memcmp against. The table is
+    // vmangos's, for 1.12 (and Turtle, which it patches into the image); for
+    // any other build every entry mismatches and says nothing.
+    if (isTurtle_ || fileBuild_ == 5875 || fileBuild_ == 0) verifyWardenScanEntries();
 
     return true;
 }
