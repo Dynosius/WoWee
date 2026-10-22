@@ -1,5 +1,6 @@
 package com.wowee.client;
 
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.system.ErrnoException;
@@ -82,6 +83,30 @@ public class WoweeActivity extends SDLActivity {
         new File(root, "config").mkdirs();
 
         super.onCreate(savedInstanceState);
+    }
+
+    /**
+     * Started here, in the foreground, because Android refuses a foreground
+     * service started from the background - so it is running already when the
+     * player leaves the app, which is when it is needed. Starting it again on
+     * every resume is harmless.
+     */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        try {
+            startForegroundService(new Intent(this, WoweeSessionService.class));
+        } catch (RuntimeException e) {
+            // ForegroundServiceStartNotAllowedException among others: the
+            // session then drops in the background, as it did before.
+            Log.w(TAG, "could not keep the session open in the background", e);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        stopService(new Intent(this, WoweeSessionService.class));
+        super.onDestroy();
     }
 
     /** Reads a system property, so a log level can be set without a rebuild. */
