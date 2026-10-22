@@ -668,8 +668,10 @@ void SocialHandler::registerOpcodes(DispatchTable& table) {
     table[Opcode::SMSG_DUEL_COUNTDOWN] = [this](network::Packet& packet) {
         if (packet.hasRemaining(4)) {
             uint32_t ms = packet.readUInt32();
-            duelCountdownMs_ = (ms > 0 && ms <= 30000) ? ms : 3000;
-            duelCountdownStartedAt_ = std::chrono::steady_clock::now();
+            if (ms == 0 || ms > 30000) ms = 3000;
+            if (owner_.addonEventCallbackRef()) {
+                owner_.addonEventCallbackRef()("WOWEE_DUEL_COUNTDOWN", {std::to_string(ms)});
+            }
         }
     };
     table[Opcode::SMSG_PARTYKILLLOG] = [this](network::Packet& packet) {
@@ -1858,7 +1860,6 @@ void SocialHandler::handleDuelComplete(network::Packet& packet) {
     if (!packet.hasRemaining(1)) return;
     uint8_t started = packet.readUInt8();
     pendingDuelRequest_ = false;
-    duelCountdownMs_ = 0;
     if (!started) owner_.addSystemChatMessage("The duel was cancelled.");
     if (owner_.addonEventCallbackRef()) owner_.addonEventCallbackRef()("DUEL_FINISHED", {});
 }

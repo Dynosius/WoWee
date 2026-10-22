@@ -1042,7 +1042,6 @@ set(WOWEE_SOURCES
     src/ui/chat/commands/help_commands.cpp
     src/ui/chat/commands/gm_commands.cpp
     src/ui/toast_manager.cpp
-    src/ui/dialog_manager.cpp
     src/ui/settings_panel.cpp
     src/ui/gamepad_bindings.cpp
     src/ui/gamepad_controls.cpp

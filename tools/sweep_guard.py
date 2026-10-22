@@ -955,19 +955,6 @@ CHECKS = [
     ("silent_refusal_check.py",
      r"^(\d+) that speak below warning", 0,
      "refusals logged below the level a bug report carries"),
-    # "Owned or suppressed" applied to dialogs one at a time. Seven were drawn
-    # twice on 2026-08-05, three of them under the plain defaults. The shared
-    # quest joined them later the same day, once QUEST_ACCEPT_CONFIRM started
-    # being fired - which is exactly the day its reason stopped holding.
-    #
-    # Three left, each read: the duel countdown has no FrameXML counterpart at
-    # all, the pet unlearn confirmation's CONFIRM_PET_UNLEARN exists here only
-    # as a globalstring with no popup using it, and the battleground invite
-    # needs CONFIRM_BATTLEFIELD_ENTRY, which nothing here fires. That last is a
-    # thinner reason than the other two and stops holding the day it is wired.
-    ("dialog_gate_check.py",
-     r"^(\d+) with no ownership check", 2,
-     "dialogs drawn without asking whether FrameXML draws them too"),
     ("api_shadowing_check.py",
      r"^\s*(\d+) to look at", 9,
      "names whose winner depends on load order"),

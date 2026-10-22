@@ -20,8 +20,7 @@ it does not fail. It reports **fewer** findings, and a sweep that quietly sees
 less of its subject goes green for a reason nobody looks at. That is precisely
 the failure the sweeps exist to catch, turned on the sweeps themselves.
 
-The three above now live in lua_binding_scan.py and opcode_map_utils.py, beside
-ownership_walk.py, which was already shared for the same reason.
+The three above now live in lua_binding_scan.py and opcode_map_utils.py.
 
 WHAT IT LOOKS FOR
 

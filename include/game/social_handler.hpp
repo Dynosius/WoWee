@@ -294,13 +294,6 @@ public:
     void reportPlayer(uint64_t targetGuid, const std::string& reason);
     [[nodiscard]] bool hasPendingDuelRequest() const { return pendingDuelRequest_; }
     [[nodiscard]] const std::string& getDuelChallengerName() const { return duelChallengerName_; }
-    [[nodiscard]] float getDuelCountdownRemaining() const {
-        if (duelCountdownMs_ == 0) return 0.0f;
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - duelCountdownStartedAt_).count();
-        float rem = (static_cast<float>(duelCountdownMs_) - static_cast<float>(elapsed)) / 1000.0f;
-        return rem > 0.0f ? rem : 0.0f;
-    }
 
     // Party/Raid
     void inviteToGroup(const std::string& playerName);
@@ -631,8 +624,6 @@ private:
     uint32_t bgJoinPendingType_ = 0;
     float bgJoinWaitSec_        = 0.0f;
     std::string duelChallengerName_;
-    uint32_t duelCountdownMs_   = 0;
-    std::chrono::steady_clock::time_point duelCountdownStartedAt_{};
 
     // Guild
     std::string guildName_;

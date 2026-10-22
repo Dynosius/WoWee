@@ -9,7 +9,6 @@
 #include "ui/keybinding_manager.hpp"
 #include "ui/chat_panel.hpp"
 #include "ui/toast_manager.hpp"
-#include "ui/dialog_manager.hpp"
 #include "ui/settings_panel.hpp"
 #include "ui/minimap_projection.hpp"
 #include "ui/combat_ui.hpp"
@@ -167,7 +166,6 @@ private:
     ToastManager toastManager_;
 
     // Dialog manager (extracted from GameScreen - owns all popup/dialog rendering)
-    DialogManager dialogManager_;
 
     // Settings panel (extracted from GameScreen - owns all settings UI and config state)
     SettingsPanel settingsPanel_;

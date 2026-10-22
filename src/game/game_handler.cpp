@@ -3850,9 +3850,6 @@ const std::string& GameHandler::getDuelChallengerName() const {
     return empty;
 }
 
-float GameHandler::getDuelCountdownRemaining() const {
-    return socialHandler_ ? socialHandler_->getDuelCountdownRemaining() : 0.0f;
-}
 
 const std::vector<GameHandler::InstanceLockout>& GameHandler::getInstanceLockouts() const {
     if (socialHandler_) return socialHandler_->getInstanceLockouts();

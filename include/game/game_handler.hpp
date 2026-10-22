@@ -1952,7 +1952,6 @@ public:
     void acceptDuel();
     // forfeitDuel() already declared at line ~399
     // Returns remaining duel countdown seconds, or 0 if no active countdown
-    float getDuelCountdownRemaining() const;
 
     // Instance lockouts (aliased from handler_types.hpp)
     using InstanceLockout = game::InstanceLockout;
@@ -4595,7 +4594,6 @@ private:
     TotemSlot activeTotemSlots_[NUM_TOTEM_SLOTS];
 
     // Duel state
-    std::chrono::steady_clock::time_point duelCountdownStartedAt_{};
 
     // ---- Guild state ----
     std::unordered_map<uint32_t, std::string> guildNameCache_;  // guildId → guild name

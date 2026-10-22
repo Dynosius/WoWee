@@ -320,8 +320,6 @@ ACCOUNTED = {
     "ChatBubbleManager::render":                  "no FrameXML bubbles; engine-drawn in 3.3.5",
     "CombatUI::renderCooldownTracker":            "no counterpart",
     "CombatUI::renderDPSMeter":                   "no counterpart",
-    "CombatUI::renderThreatWindow":               "no counterpart; FrameXML's threat is on the unit frame",
-    "DialogManager::renderDuelCountdown":         "no counterpart; FrameXML has the request popup only",
     "GameScreen::renderEntityList":               "debug window",
     "GameScreen::renderNameplates":               "no FrameXML nameplates in 3.3.5",
     "GameScreen::renderPlayerInfo":               "debug window",
@@ -344,10 +342,8 @@ ACCOUNTED = {
     "WindowManager::renderSkillsWindow":          "a window with its own toggle",
     "WindowManager::renderInstanceLockouts":      "a window with its own toggle; RaidInfoFrame is too",
     "WindowManager::renderTitlesWindow":          "a window with its own toggle; FrameXML's is the paperdoll's title dropdown",
-    "CombatUI::renderCombatLog":                  "a window with its own toggle; FrameXML's is ChatFrame2",
     # Gated somewhere a reachability walk cannot see.
     "ToastManager::renderZoneToasts":             "suppressed by the zone banner's own timer",
-    "DialogManager::renderPetUnlearnConfirmDialog": "staticpopup.lua declares no CONFIRM_PET_UNLEARN",
 }
 
 unreviewed = sorted(r[0] for r in rows if r[0] not in ACCOUNTED)
