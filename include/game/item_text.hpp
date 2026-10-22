@@ -10,8 +10,11 @@
  * until the copies were found to disagree.
  */
 
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <string>
+#include <utility>
 
 #include "game/protocol_constants.hpp"
 
@@ -144,17 +147,37 @@ inline const char* itemModStatName(uint32_t statType) {
 }
 
 
-/// What resistance school `index` is, 0..5, as an item line reads it.
-///
-/// Holy first and Arcane last, which is the order the six resistance values
-/// arrive in and not the order the spell schools are numbered. Written out in
-/// the bag tooltip and the chat tooltip both.
-inline const char* resistanceSchoolName(uint32_t index) {
-    static constexpr const char* kBySchool[] = {
-        "Holy Resistance", "Fire Resistance", "Nature Resistance",
-        "Frost Resistance", "Shadow Resistance", "Arcane Resistance",
+/// The names in a class or race bitmask, joined with commas, for the
+/// "Classes:" and "Races:" lines of an item. Empty when the mask does not
+/// restrict anything: zero, all bits, or every playable one set.
+inline std::string maskNames(uint32_t mask, const std::pair<uint32_t, const char*>* table,
+                             size_t count) {
+    uint32_t all = 0;
+    for (size_t i = 0; i < count; ++i) all |= table[i].first;
+    if (mask == 0 || (mask & all) == all) return {};
+    std::string out;
+    for (size_t i = 0; i < count; ++i) {
+        if ((mask & table[i].first) == 0) continue;
+        if (!out.empty()) out += ", ";
+        out += table[i].second;
+    }
+    return out;
+}
+
+inline std::string classNamesFromMask(uint32_t mask) {
+    static const std::pair<uint32_t, const char*> kClasses[] = {
+        {1, "Warrior"}, {2, "Paladin"}, {4, "Hunter"}, {8, "Rogue"}, {16, "Priest"},
+        {32, "Death Knight"}, {64, "Shaman"}, {128, "Mage"}, {256, "Warlock"}, {1024, "Druid"},
     };
-    return index < 6 ? kBySchool[index] : "Resistance";
+    return maskNames(mask, kClasses, std::size(kClasses));
+}
+
+inline std::string raceNamesFromMask(uint32_t mask) {
+    static const std::pair<uint32_t, const char*> kRaces[] = {
+        {1, "Human"}, {2, "Orc"}, {4, "Dwarf"}, {8, "Night Elf"}, {16, "Undead"},
+        {32, "Tauren"}, {64, "Gnome"}, {128, "Troll"}, {512, "Blood Elf"}, {1024, "Draenei"},
+    };
+    return maskNames(mask, kRaces, std::size(kRaces));
 }
 
 /// An item's quality colour as an eight-digit hex string, alpha first.

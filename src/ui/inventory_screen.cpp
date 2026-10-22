@@ -46,7 +46,6 @@ namespace {
 
 
 
-// Socket types from shared ui_colors.hpp (ui::kSocketTypes)
 
 
 
@@ -83,17 +82,6 @@ void InventoryScreen::setBagMoveConfigActive(bool active) {
 
 ImVec4 InventoryScreen::getQualityColor(game::ItemQuality quality) {
     return ui::getQualityColor(quality);
-}
-
-// ============================================================
-// Item Icon Loading
-// ============================================================
-
-VkDescriptorSet InventoryScreen::getItemIcon(uint32_t displayInfoId) {
-    // The shared cache, so an item drawn here and on the action bar is
-    // uploaded once. See itemIconTexture.
-    return itemIconTexture(displayInfoId, assetManager_,
-                           core::Application::getInstance().getWindow());
 }
 
 // ============================================================

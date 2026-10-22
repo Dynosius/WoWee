@@ -71,10 +71,6 @@ private:
     // Asset manager for icons and preview
     pipeline::AssetManager* assetManager_ = nullptr;
 
-    // Item icon cache: displayInfoId -> GL texture
-public:
-    VkDescriptorSet getItemIcon(uint32_t displayInfoId);
-private:
 
     // Character model preview
 

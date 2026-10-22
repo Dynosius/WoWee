@@ -1,6 +1,7 @@
 // lua_inventory_api.cpp - Items, containers, merchant, loot, equipment, trading, auction, and mail Lua API bindings.
 // Extracted from lua_engine.cpp as part of §5.1 (Tame LuaEngine).
 #include "game/item_text.hpp"
+#include "game/reputation_standing.hpp"
 #include "addons/lua_api_helpers.hpp"
 #include "addons/lua_engine.hpp"
 #include "game/inventory_slots.hpp"
@@ -2097,6 +2098,34 @@ static int lua_GetItemTooltipData(lua_State* L) {
     // Required level
     lua_pushnumber(L, info->requiredLevel);
     lua_setfield(L, -2, "requiredLevel");
+    // Who may use it and what standing it asks for, which the real tooltip
+    // writes as its "Classes:", "Races:" and "Requires <faction> - <standing>"
+    // lines. Empty when the mask does not narrow anything.
+    if (const std::string classes = game::classNamesFromMask(info->allowableClass); !classes.empty()) {
+        lua_pushstring(L, classes.c_str());
+        lua_setfield(L, -2, "classes");
+    }
+    if (const std::string races = game::raceNamesFromMask(info->allowableRace); !races.empty()) {
+        lua_pushstring(L, races.c_str());
+        lua_setfield(L, -2, "races");
+    }
+    if (info->requiredReputationFaction != 0) {
+        std::string faction = gh->getFactionName(info->requiredReputationFaction);
+        if (!faction.empty()) {
+            lua_pushstring(L, faction.c_str());
+            lua_setfield(L, -2, "requiredFaction");
+            lua_pushstring(L, game::reputationRankName(info->requiredReputationRank));
+            lua_setfield(L, -2, "requiredStanding");
+        }
+    }
+    // What the sockets give when every one holds the colour it asks for.
+    if (info->socketBonus != 0) {
+        const std::string bonus = gh->getEnchantName(info->socketBonus);
+        if (!bonus.empty()) {
+            lua_pushstring(L, bonus.c_str());
+            lua_setfield(L, -2, "socketBonus");
+        }
+    }
     // Extra stats (hit, crit, haste, AP, SP, etc.) as array of {type, value} pairs
     if (!info->extraStats.empty()) {
         lua_newtable(L);

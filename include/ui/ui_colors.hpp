@@ -71,17 +71,6 @@ namespace colors {
     constexpr ImVec4 kGold   = {1.00f, 0.82f, 0.00f, 1.0f};
     constexpr ImVec4 kSilver = {0.80f, 0.80f, 0.80f, 1.0f};
     constexpr ImVec4 kCopper = {0.72f, 0.45f, 0.20f, 1.0f};
-/// An item's durability, coloured the same way in the bag and in the tooltip.
-///
-/// Two copies with the same thresholds and different greens, so the strip under
-/// an icon and the line in its own tooltip disagreed about the same item. The
-/// strip is drawn semi-transparent, which is why the alpha is the caller's.
-inline ImVec4 durabilityColor(float pct) {
-    if (pct > 0.5f) return {0.1f, 1.0f, 0.1f, 1.0f};
-    if (pct > 0.25f) return {1.0f, 1.0f, 0.0f, 1.0f};
-    return kBrightRed;
-}
-
 // ---- Power bar colour ----
 //
 // Five places mapped a power type to its bar colour and none of them covered
@@ -124,106 +113,6 @@ inline ImU32 bgGroupColor(uint32_t group) {
     };
     return kByGroup[group & 1];
 }
-
-// ---- Coin display (gold/silver/copper) ----
-inline void renderCoinsText(uint32_t g, uint32_t s, uint32_t c) {
-    bool any = false;
-    if (g > 0) {
-        ImGui::TextColored(colors::kGold, "%ug", g);
-        any = true;
-    }
-    if (s > 0 || g > 0) {
-        if (any) ImGui::SameLine(0, 3);
-        ImGui::TextColored(colors::kSilver, "%us", s);
-        any = true;
-    }
-    if (any) ImGui::SameLine(0, 3);
-    ImGui::TextColored(colors::kCopper, "%uc", c);
-}
-
-// Convenience overload: decompose copper amount and render as gold/silver/copper
-inline void renderCoinsFromCopper(uint64_t copper) {
-    const auto coins = game::splitCopper(copper);
-    renderCoinsText(coins.gold, coins.silver, coins.copper);
-}
-
-// ---- Inventory slot name from WoW inventory type ----
-inline const char* getInventorySlotName(uint32_t inventoryType) {
-    switch (inventoryType) {
-        case 1:  return "Head";
-        case 2:  return "Neck";
-        case 3:  return "Shoulder";
-        case 4:  return "Shirt";
-        case 5:  return "Chest";
-        case 6:  return "Waist";
-        case 7:  return "Legs";
-        case 8:  return "Feet";
-        case 9:  return "Wrist";
-        case 10: return "Hands";
-        case 11: return "Finger";
-        case 12: return "Trinket";
-        case 13: return "One-Hand";
-        case 14: return "Shield";
-        case 15: return "Ranged";
-        case 16: return "Back";
-        case 17: return "Two-Hand";
-        case 18: return "Bag";
-        case 19: return "Tabard";
-        case 20: return "Robe";
-        case 21: return "Main Hand";
-        case 22: return "Off Hand";
-        case 23: return "Held In Off-hand";
-        case 25: return "Thrown";
-        case 26: return "Ranged";
-        case 28: return "Relic";
-        default: return "";
-    }
-}
-
-// ---- Binding type display ----
-inline void renderBindingType(uint32_t bindType) {
-    if (const char* text = game::itemBindText(bindType)) {
-        ImGui::TextColored(colors::kTooltipGold, "%s", text);
-    }
-}
-
-// ---- DBC item-set spell field keys ----
-inline constexpr const char* kItemSetItemKeys[10] = {
-    "Item0","Item1","Item2","Item3","Item4",
-    "Item5","Item6","Item7","Item8","Item9"
-};
-inline constexpr const char* kItemSetSpellKeys[10] = {
-    "Spell0","Spell1","Spell2","Spell3","Spell4",
-    "Spell5","Spell6","Spell7","Spell8","Spell9"
-};
-inline constexpr const char* kItemSetThresholdKeys[10] = {
-    "Threshold0","Threshold1","Threshold2","Threshold3","Threshold4",
-    "Threshold5","Threshold6","Threshold7","Threshold8","Threshold9"
-};
-
-// ---- Socket type display (gem sockets) ----
-struct SocketTypeDef { uint32_t mask; const char* label; ImVec4 col; };
-inline constexpr SocketTypeDef kSocketTypes[] = {
-    { .mask = 1, .label = "Meta Socket",   .col = { 0.7f, 0.7f, 0.9f, 1.0f } },
-    { .mask = 2, .label = "Red Socket",    .col = { 1.0f, 0.3f, 0.3f, 1.0f } },
-    { .mask = 4, .label = "Yellow Socket", .col = { 1.0f, 0.9f, 0.3f, 1.0f } },
-    { .mask = 8, .label = "Blue Socket",   .col = { 0.3f, 0.6f, 1.0f, 1.0f } },
-};
-
-// ---- Class/race bitmask lookup (for allowableClass/allowableRace display) ----
-struct ClassMaskEntry { uint32_t mask; const char* name; };
-inline constexpr ClassMaskEntry kClassMasks[] = {
-    {.mask = 1,.name = "Warrior"}, {.mask = 2,.name = "Paladin"}, {.mask = 4,.name = "Hunter"}, {.mask = 8,.name = "Rogue"},
-    {.mask = 16,.name = "Priest"}, {.mask = 32,.name = "Death Knight"}, {.mask = 64,.name = "Shaman"},
-    {.mask = 128,.name = "Mage"}, {.mask = 256,.name = "Warlock"}, {.mask = 1024,.name = "Druid"},
-};
-
-struct RaceMaskEntry { uint32_t mask; const char* name; };
-inline constexpr RaceMaskEntry kRaceMasks[] = {
-    {.mask = 1,.name = "Human"}, {.mask = 2,.name = "Orc"}, {.mask = 4,.name = "Dwarf"}, {.mask = 8,.name = "Night Elf"},
-    {.mask = 16,.name = "Undead"}, {.mask = 32,.name = "Tauren"}, {.mask = 64,.name = "Gnome"}, {.mask = 128,.name = "Troll"},
-    {.mask = 512,.name = "Blood Elf"}, {.mask = 1024,.name = "Draenei"},
-};
 
 // ---- WoW class colors (Blizzard canonical) ----
 inline ImVec4 getClassColor(uint8_t classId) {
