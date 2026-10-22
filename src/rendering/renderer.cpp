@@ -4383,12 +4383,15 @@ void Renderer::renderShadowPass() {
     if (passAblation_ && passAblation_->skip(AblationPass::Shadows)) return;
     if (shadowDepthImage[0] == VK_NULL_HANDLE) return;
     if (currentCmd == VK_NULL_HANDLE) return;
-    // Shadows off still runs the pass, and the pass still clears the map and
-    // leaves it in the layout its readers expect - it simply draws nothing
-    // into it. Returning here instead left the image untransitioned while it
-    // stayed bound for sampling, which is the shape of fault that takes the
-    // device down rather than drawing something wrong.
-    const bool drawCasters = shadowsEnabled;
+    // Shadows off runs this pass exactly as on, casters included: the off
+    // switch is shadowParams.x, which stops the scene sampling the map.
+    //
+    // Off used to skip the casters and leave an empty, cleared map, and the
+    // GPU faulted within a second of it - with GPU-assisted validation silent,
+    // so inside a shader - and the control was taken away. Drawing the
+    // casters regardless puts the pass back on the one path known to hold,
+    // and costs what shadows on costs; a shorter shadow distance is what
+    // saves the time.
 
     // Shadows render every frame - throttling causes visible flicker on player/NPCs
 
@@ -4478,9 +4481,7 @@ void Renderer::renderShadowPass() {
 
     // Phase 7/8: render shadow casters
     const float shadowCullRadius = shadowDistance_ * 1.35f;
-    // With shadows off the pass still begins and ends, so the map is cleared
-    // and left where its readers expect it; only the casters are skipped.
-    if (drawCasters) {
+    {
     if (terrainRenderer) {
         terrainRenderer->renderShadow(currentCmd, lightSpaceMatrix, shadowCenter, shadowCullRadius);
     }
@@ -4493,7 +4494,7 @@ void Renderer::renderShadowPass() {
     if (characterRenderer) {
         characterRenderer->renderShadow(currentCmd, lightSpaceMatrix, shadowCenter, shadowCullRadius);
     }
-    }  // drawCasters
+    }
 
     if (dynamicRendering) {
         vkCmdEndRendering(currentCmd);

@@ -63,14 +63,9 @@ struct GraphicsPresetValues {
     int   grassDistance;     ///< yards
 };
 
-// Note the shadows column: every preset leaves them on.
-//
-// Low used to turn them off, which the client no longer honours - the control
-// for it is off the settings panel and setShadowsEnabled holds them on, because
-// turning them off loses the device. A preset that sets a value nothing acts on
-// is a preset that lies about what it did, and it wrote shadows=0 to the config
-// on the way past. Low leans on its short shadow distance instead, which is
-// where the cost actually is.
+// Note the shadows column: every preset leaves them on. Turning them off
+// saves no time - the shadow pass runs either way - so Low leans on its short
+// shadow distance instead, which is where the cost actually is.
 // And the FXAA column: off on every row. Ultra used to turn it on over 8x
 // MSAA, where there is nothing left for it to find and its sub-pixel filter
 // only softened the resolve. It stays in the panel for anyone who wants it,

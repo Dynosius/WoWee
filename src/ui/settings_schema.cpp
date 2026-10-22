@@ -38,16 +38,13 @@ constexpr SettingDesc kSchema[] = {
      "anti-aliasing, surface detail, ground clutter and grass.\n"
      "Change any one of them afterwards and this reads Custom.",
      "Custom|Low|Medium|High|Ultra", 0},
-    // No shadows row, because turning them off crashes the client.
-    //
-    // With the casters skipped the shadow pass still begins, clears and
-    // transitions its map - all of which was written deliberately, and none of
-    // which is enough: the GPU faults within a second or so and the device is
-    // lost. GPU-assisted validation reports nothing at all before it goes, so
-    // the fault is inside a shader rather than in an API call, and it is not
-    // found yet. Until it is, the control is off the panel and shadows are held
-    // on: a setting whose only effect is to end the session is worse than a
-    // setting that is missing.
+    // Shadows off used to lose the device, and the row was taken away; off
+    // now only stops the scene sampling the map, with the shadow pass run as
+    // it is when they are on. See Renderer::renderShadowPass.
+    {"shadows", "Shadows", SettingKind::Bool, 0, 0, 0, "Graphics", "Shadows",
+     "Cast shadows from the sun and moon.\n"
+     "Turning them off does not make the picture faster; a shorter\n"
+     "shadow distance does.", "", 1},
     {"shadowdistance", "Shadow distance", SettingKind::Float, 40, 500, 10, "Graphics", "Shadows",
      // No longer conditional on a shadows toggle: there is not one, and the
      // stored value it used to read may still say 0 from before it went, which

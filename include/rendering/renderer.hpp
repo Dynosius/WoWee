@@ -378,10 +378,9 @@ public:
     void registerPreview(CharacterPreview* preview);
     void unregisterPreview(CharacterPreview* preview);
 
-    /// Held on. Turning shadows off loses the device within a second - see
-    /// the note in settings_schema.cpp - so a saved 0 from before that was
-    /// known, or any other caller, cannot switch them off.
-    void setShadowsEnabled(bool /*enabled*/) { shadowsEnabled = true; }
+    /// Off stops the scene sampling the shadow map; the shadow pass itself
+    /// still runs whole, casters and all. See renderShadowPass.
+    void setShadowsEnabled(bool enabled) { shadowsEnabled = enabled; }
     bool areShadowsEnabled() const { return shadowsEnabled; }
     void setShadowDistance(float dist) { shadowDistance_ = glm::clamp(dist, 40.0f, 500.0f); }
     float getShadowDistance() const { return shadowDistance_; }
