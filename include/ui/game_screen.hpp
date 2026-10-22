@@ -165,7 +165,6 @@ private:
     WindowManager windowManager_;
 
     // UI state
-    bool showEntityWindow = false;
     bool showMinimap_ = true;  // M key toggles minimap
     uint64_t nameplateCtxGuid_ = 0; // GUID of nameplate right-clicked (0 = none)
     ImVec2 nameplateCtxPos_{};      // Screen position of nameplate right-click
@@ -176,34 +175,7 @@ private:
     // UIErrorsFrame: WoW-style center-bottom error messages (spell fails, out of range, etc.)
     bool uiErrorCallbackSet_ = false;
 
-    bool showPlayerInfo = false;
     bool showWorldMap_ = false;  // W key toggles world map
-    /// The screen width the tracker was last placed against.
-    ///
-    /// Its position is recomputed from the right edge whenever the window
-    /// resizes, and that recompute is why the tracker could not be dragged:
-    /// forcing the position every frame put it straight back. Forced only when
-    /// the width actually changed now, so the rest of the time the window owns
-    /// where it is and a drag survives.
-
-
-
-    /**
-     * Render player info window
-     */
-    void renderPlayerInfo(game::GameHandler& gameHandler);
-
-    /**
-     * Render entity list window
-     */
-    void renderEntityList(game::GameHandler& gameHandler);
-
-    // Halves of the saved DPS meter position, applied once both have been read
-    // (settings arrive as separate key/value lines).
-
-    /**
-     * Render pet frame (below player frame when player has an active pet)
-     */
 
     /**
      * Process targeting input (Tab, Escape, click)
@@ -220,13 +192,8 @@ private:
      */
     void updateCharacterTextures(game::Inventory& inventory);
 
-
     void renderMinimapMarkers(game::GameHandler& gameHandler);
 
-    /// The furniture around the minimap - mute, friends and zoom buttons, the
-    /// clock, and the stack of indicators below it. Separate from the marker
-    /// pass because it answers the ownership question the other way: FrameXML's
-    /// cluster brings its own, and the blips it does not bring at all.
     /// Where the minimap is this frame, and how to put a thing on it.
     ///
     /// Every marker category needs the same eight values and the same three

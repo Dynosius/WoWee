@@ -72,9 +72,6 @@
 namespace {
     using namespace wowee::ui::colors;
     using namespace wowee::ui::helpers;
-    constexpr auto& kColorRed        = kRed;
-    constexpr auto& kColorBrightGreen= kBrightGreen;
-    constexpr auto& kColorYellow     = kYellow;
 
     // Upper bound on a game object's cursor-pick sphere. A wide/tall M2 GO (a forge, an
     // anvil, a large brazier) reports a legitimately big visual radius, but its bounding
@@ -622,15 +619,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     processTargetInput(gameHandler);
 
 
-    // Render windows
-    if (showPlayerInfo) {
-        renderPlayerInfo(gameHandler);
-    }
-
-    if (showEntityWindow) {
-        renderEntityList(gameHandler);
-    }
-
     // The chat window is FrameXML's and this client no longer draws one, but
     // the slash commands still belong here: FrameXML's edit box hands an
     // unknown command to runClientChatCommand, which is this client's own
@@ -1014,59 +1002,6 @@ void GameScreen::offerPendingTradeItem(game::GameHandler& gameHandler) {
     pendingTradeItem_ = PendingTradeItem{};
 }
 
-void GameScreen::renderPlayerInfo(game::GameHandler& gameHandler) {
-    ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(10, 30), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Player Info", &showPlayerInfo);
-
-    const auto& movement = gameHandler.getMovementInfo();
-
-    ImGui::Text("Position & Movement");
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    // Position
-    ImGui::Text("Position:");
-    ImGui::Indent();
-    ImGui::Text("X: %.2f", movement.x);
-    ImGui::Text("Y: %.2f", movement.y);
-    ImGui::Text("Z: %.2f", movement.z);
-    ImGui::Text("Orientation: %.2f rad (%.1f deg)", movement.orientation, movement.orientation * 180.0f / core::coords::PI);
-    ImGui::Unindent();
-
-    ImGui::Spacing();
-
-    // Movement flags
-    ImGui::Text("Movement Flags: 0x%08X", movement.flags);
-    ImGui::Text("Time: %u ms", movement.time);
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    // Connection state
-    ImGui::Text("Connection State:");
-    ImGui::Indent();
-    auto state = gameHandler.getState();
-    switch (state) {
-        case game::WorldState::IN_WORLD:
-            ImGui::TextColored(kColorBrightGreen, "In World");
-            break;
-        case game::WorldState::AUTHENTICATED:
-            ImGui::TextColored(kColorYellow, "Authenticated");
-            break;
-        case game::WorldState::ENTERING_WORLD:
-            ImGui::TextColored(kColorYellow, "Entering World...");
-            break;
-        default:
-            ImGui::TextColored(kColorRed, "State: %d", static_cast<int>(state));
-            break;
-    }
-    ImGui::Unindent();
-
-    ImGui::End();
-}
-
 /// A cursor picture, uploaded once and kept.
 ///
 /// Only a successful upload is cached, so a transient descriptor-pool failure
@@ -1221,97 +1156,6 @@ bool GameScreen::drawWorldObjectCursor(game::GameHandler& gameHandler,
         return false;
     }
     return true;
-}
-
-void GameScreen::renderEntityList(game::GameHandler& gameHandler) {
-    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(10, 290), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Entities", &showEntityWindow);
-
-    const auto& entityManager = gameHandler.getEntityManager();
-    const auto& entities = entityManager.getEntities();
-
-    ImGui::Text("Entities in View: %zu", entities.size());
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    if (entities.empty()) {
-        ImGui::TextDisabled("No entities in view");
-    } else {
-        // Entity table
-        if (ImGui::BeginTable("EntitiesTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("GUID", ImGuiTableColumnFlags_WidthFixed, 140.0f);
-            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Position", ImGuiTableColumnFlags_WidthFixed, 150.0f);
-            ImGui::TableSetupColumn("Distance", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableHeadersRow();
-
-            const auto& playerMovement = gameHandler.getMovementInfo();
-            float playerX = playerMovement.x;
-            float playerY = playerMovement.y;
-            float playerZ = playerMovement.z;
-
-            for (const auto& [guid, entity] : entities) {
-                ImGui::TableNextRow();
-
-                // GUID
-                ImGui::TableSetColumnIndex(0);
-                char guidStr[24];
-                snprintf(guidStr, sizeof(guidStr), "0x%016llX", (unsigned long long)guid);
-                ImGui::Text("%s", guidStr);
-
-                // Type
-                ImGui::TableSetColumnIndex(1);
-                switch (entity->getType()) {
-                    case game::ObjectType::PLAYER:
-                        ImGui::TextColored(kColorBrightGreen, "Player");
-                        break;
-                    case game::ObjectType::UNIT:
-                        ImGui::TextColored(kColorYellow, "Unit");
-                        break;
-                    case game::ObjectType::GAMEOBJECT:
-                        ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "GameObject");
-                        break;
-                    default:
-                        ImGui::Text("Object");
-                        break;
-                }
-
-                // Name (for players and units)
-                ImGui::TableSetColumnIndex(2);
-                if (entity->getType() == game::ObjectType::PLAYER) {
-                    auto player = std::static_pointer_cast<game::Player>(entity);
-                    ImGui::Text("%s", player->getName().c_str());
-                } else if (entity->getType() == game::ObjectType::UNIT) {
-                    auto unit = std::static_pointer_cast<game::Unit>(entity);
-                    if (!unit->getName().empty()) {
-                        ImGui::Text("%s", unit->getName().c_str());
-                    } else {
-                        ImGui::TextDisabled("--");
-                    }
-                } else {
-                    ImGui::TextDisabled("--");
-                }
-
-                // Position
-                ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%.1f, %.1f, %.1f", entity->getX(), entity->getY(), entity->getZ());
-
-                // Distance from player
-                ImGui::TableSetColumnIndex(4);
-                float dx = entity->getX() - playerX;
-                float dy = entity->getY() - playerY;
-                float dz = entity->getZ() - playerZ;
-                float distance = std::sqrt(dx*dx + dy*dy + dz*dz);
-                ImGui::Text("%.1f", distance);
-            }
-
-            ImGui::EndTable();
-        }
-    }
-
-    ImGui::End();
 }
 
 void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
