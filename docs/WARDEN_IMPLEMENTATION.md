@@ -72,7 +72,9 @@ The same directory holds `<MD5>.cr` files - pre-computed challenge/response entr
 for a module (a 17-byte header carrying the module's nine check opcodes, then 68-byte
 entries of seed, reply and the next RC4 key pair). `WardenHandler::loadWardenCRFile`
 reads one on `MODULE_USE`, and a `HASH_REQUEST` whose seed matches an entry is
-answered from it. With no file, the module every TrinityCore/AzerothCore realm sends
+answered from it. With `WOWEE_WARDEN_ANSWER_HASH=1` - off by default, because answering
+is what makes a server send cheat checks and a wrong check answer gets the account
+banned - two more sources are used. With no file, the module every TrinityCore/AzerothCore realm sends
 to 3.3.5a (`79C0768D657977D697E10BAD956CCED1`) is answered from a built-in table
 (`knownWardenCR`, the constants AzerothCore publishes).
 

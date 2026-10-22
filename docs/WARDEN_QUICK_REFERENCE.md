@@ -13,7 +13,7 @@ Warden modules are native x86 Windows DLLs that the server encrypts and delivers
 2. Client verifies and decrypts: MD5 → RC4 → RSA-2048 signature verify → zlib decompress
 3. Unpacks the module image: relocations applied, imports resolved (Windows API hooks)
 4. Executes entry point via Unicorn Engine x86 emulator
-5. `HASH_REQUEST` is answered from a `.cr` file, the built-in table for the TrinityCore/AzerothCore 3.3.5a module, or the module's own handler run in the emulator
+5. `HASH_REQUEST` is answered from a `.cr` file; with `WOWEE_WARDEN_ANSWER_HASH=1`, also from the built-in table for the TrinityCore/AzerothCore 3.3.5a module or the module's own handler run in the emulator. Off by default: answering makes the server send cheat checks, and a wrong check answer is penalised with a ban where an unanswered hash request is tolerated
 6. Client responds with check results via `CMSG_WARDEN_DATA` (0x2E7), built by `WardenHandler` from a `WoW.exe` image
 
 A signature mismatch does not stop the load. A realm that signs its own module can name its
@@ -88,7 +88,7 @@ Key messages:
 - `Warden: Module loaded successfully` - module downloaded and loaded
 - `WardenModule: Calling module entry point` - emulation running
 - `Warden: Loaded N CR entries` / `Warden: No usable .cr file` - whether hash requests can be answered from a table
-- `Warden: HASH_REQUEST answered by the module's own handler` - answered by emulation instead (`WOWEE_WARDEN_EMULATE_HASH=0` turns that off)
+- `Warden: HASH_REQUEST answered by the module's own handler` - answered by emulation instead
 - `Warden: (sync) Parsed N checks` / `Warden: (async) Parsed N checks` - a check request was answered
 - `WardenMemory: WoW.exe not found` - memory checks will answer "unmapped"
 - `packetsAfterGate=0` - server not responding after Warden exchange (debug level)

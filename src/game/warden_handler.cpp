@@ -35,6 +35,17 @@ namespace {
 constexpr uint8_t kWardenScanFound = 0x4A;
 constexpr uint8_t kWardenScanNotFound = 0xE9;
 
+// Whether a hash request may be answered without a hand-placed .cr file -
+// from the built-in table or by the module itself. Off unless
+// WOWEE_WARDEN_ANSWER_HASH=1. Answering is what makes a server start sending
+// cheat checks, and a server penalises a wrong check answer with a ban, where
+// it tolerates an unanswered hash request. Until every check answer has been
+// verified against a server's own grading, silence is the safe default.
+bool wardenAnswerHashOptedIn() {
+    const char* env = std::getenv("WOWEE_WARDEN_ANSWER_HASH");
+    return env && std::string(env) == "1";
+}
+
 std::string asciiLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -234,7 +245,8 @@ bool WardenHandler::loadWardenCRFile(const std::string& moduleHashHex) {
     const std::string crPath = wardenCRPath(moduleHashHex);
     std::string source = crPath;
     if (!readWardenCR(crPath, wardenCheckOpcodes_, wardenCREntries_)) {
-        if (!knownWardenCR(moduleHashHex, wardenCheckOpcodes_, wardenCREntries_)) {
+        if (!wardenAnswerHashOptedIn() ||
+            !knownWardenCR(moduleHashHex, wardenCheckOpcodes_, wardenCREntries_)) {
             LOG_WARNING("Warden: No usable .cr file at ", crPath,
                         " - hash requests go unanswered. Servers that tolerate that are unaffected; "
                         "otherwise turn Warden off on the server");
@@ -504,14 +516,11 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
             // --- No CR match: ask the module itself ---
             // The module computes its own reply and the keys the exchange
             // switches to, so where it runs its answer is the right one for
-            // any server. WOWEE_WARDEN_EMULATE_HASH=0 skips it, for telling a
-            // wrong emulated answer from a server that rejects the client.
+            // any server. Only when opted in; see wardenAnswerHashOptedIn.
             {
-                const char* emulateEnv = std::getenv("WOWEE_WARDEN_EMULATE_HASH");
-                const bool emulateAllowed = !(emulateEnv && std::string(emulateEnv) == "0");
                 uint8_t reply[20];
                 std::vector<uint8_t> rc4State;
-                if (emulateAllowed && wardenLoadedModule_ &&
+                if (wardenAnswerHashOptedIn() && wardenLoadedModule_ &&
                     wardenLoadedModule_->answerHashRequest(seed.data(), owner_.getSessionKey(),
                                                            reply, rc4State)) {
                     std::vector<uint8_t> resp;
