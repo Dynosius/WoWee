@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -79,6 +80,31 @@ inline bool readWardenCR(const std::string& path, uint8_t outOpcodes[9],
         in.read(reinterpret_cast<char*>(r.serverKey), 16);
     }
     return in.good() && !outRecords.empty();
+}
+
+/// The module every TrinityCore and AzerothCore realm sends to a 3.3.5a client
+/// (MD5 79C0768D657977D697E10BAD956CCED1). Those servers ask it one fixed seed
+/// and expect SHA1(clientKey) back, so its whole `.cr` is public: the constants
+/// are AzerothCore's WardenModuleWin.h, the opcodes its WardenCheckType.
+/// Without it a realm that sends this module goes unanswered unless someone has
+/// hand-placed a `.cr` file, and every check decodes against zeroed opcodes.
+inline bool knownWardenCR(const std::string& moduleHashHex, uint8_t outOpcodes[9],
+                          std::vector<WardenCRRecord>& outRecords) {
+    outRecords.clear();
+    if (moduleHashHex != "79c0768d657977d697e10bad956cced1") return false;
+
+    // MEM, MODULE, PAGE_A, PAGE_B, MPQ, LUA, PROC, DRIVER, TIMING
+    static constexpr uint8_t kOpcodes[9] = {0xF3, 0xD9, 0xB2, 0xBF, 0x98, 0x8B, 0x7E, 0x71, 0x57};
+    static constexpr WardenCRRecord kRecord = {
+        {0x4D, 0x80, 0x8D, 0x2C, 0x77, 0xD9, 0x05, 0xC4, 0x1A, 0x63, 0x80, 0xEC, 0x08, 0x58, 0x6A, 0xFE},
+        {0x56, 0x8C, 0x05, 0x4C, 0x78, 0x1A, 0x97, 0x2A, 0x60, 0x37,
+         0xA2, 0x29, 0x0C, 0x22, 0xB5, 0x25, 0x71, 0xA0, 0x6F, 0x4E},
+        {0x7F, 0x96, 0xEE, 0xFD, 0xA5, 0xB6, 0x3D, 0x20, 0xA4, 0xDF, 0x8E, 0x00, 0xCB, 0xF4, 0x83, 0x04},
+        {0xC2, 0xB7, 0xAD, 0xED, 0xFC, 0xCC, 0xA9, 0xC2, 0xBF, 0xB3, 0xF8, 0x56, 0x02, 0xBA, 0x80, 0x9B},
+    };
+    std::memcpy(outOpcodes, kOpcodes, 9);
+    outRecords.push_back(kRecord);
+    return true;
 }
 
 /// Write a `.cr` file. The eight historical header bytes are written as zero,

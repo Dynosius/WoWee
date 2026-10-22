@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <openssl/sha.h>
 #include <filesystem>
 
 using namespace wowee::game;
@@ -92,4 +93,23 @@ TEST_CASE("a truncated or missing .cr is refused, not half-read", "[wardencr]") 
 
     // An empty record set is not a file worth writing.
     CHECK_FALSE(writeWardenCR(tempPath(), opcodes, {}));
+}
+
+TEST_CASE("the TrinityCore/AzerothCore module answers from the built-in table", "[wardencr]") {
+    uint8_t opcodes[9] = {};
+    std::vector<WardenCRRecord> out;
+    REQUIRE(knownWardenCR("79c0768d657977d697e10bad956cced1", opcodes, out));
+    REQUIRE(out.size() == 1);
+
+    // Those servers check the reply against SHA1 of the key the client then
+    // encrypts with; a transcription slip in either is a disconnect.
+    uint8_t digest[SHA_DIGEST_LENGTH];
+    SHA1(out[0].clientKey, 16, digest);
+    CHECK(std::memcmp(digest, out[0].reply, 20) == 0);
+
+    CHECK(opcodes[0] == 0xF3);  // MEM_CHECK
+    CHECK(opcodes[8] == 0x57);  // TIMING_CHECK
+
+    CHECK_FALSE(knownWardenCR("00000000000000000000000000000000", opcodes, out));
+    CHECK(out.empty());
 }

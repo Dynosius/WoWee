@@ -225,11 +225,15 @@ void WardenHandler::update(float deltaTime) {
 
 bool WardenHandler::loadWardenCRFile(const std::string& moduleHashHex) {
     const std::string crPath = wardenCRPath(moduleHashHex);
+    std::string source = crPath;
     if (!readWardenCR(crPath, wardenCheckOpcodes_, wardenCREntries_)) {
-        LOG_WARNING("Warden: No usable .cr file at ", crPath,
-                    " - hash requests go unanswered. Servers that tolerate that are unaffected; "
-                    "otherwise turn Warden off on the server");
-        return false;
+        if (!knownWardenCR(moduleHashHex, wardenCheckOpcodes_, wardenCREntries_)) {
+            LOG_WARNING("Warden: No usable .cr file at ", crPath,
+                        " - hash requests go unanswered. Servers that tolerate that are unaffected; "
+                        "otherwise turn Warden off on the server");
+            return false;
+        }
+        source = "the built-in TrinityCore/AzerothCore module table";
     }
 
     {
@@ -245,7 +249,7 @@ bool WardenHandler::loadWardenCRFile(const std::string& moduleHashHex) {
         LOG_DEBUG("Warden: Check opcodes: ", opcHex);
     }
 
-    LOG_INFO("Warden: Loaded ", wardenCREntries_.size(), " CR entries from ", crPath);
+    LOG_INFO("Warden: Loaded ", wardenCREntries_.size(), " CR entries from ", source);
     return true;
 }
 
