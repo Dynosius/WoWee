@@ -1235,6 +1235,17 @@ target_link_libraries(test_combat_log_event PRIVATE catch2_main)
 add_test(NAME combat_log_event COMMAND test_combat_log_event)
 register_test_target(test_combat_log_event)
 
+# ── test_classic_combat_chat ─────────────────────────────────
+add_executable(test_classic_combat_chat
+    test_classic_combat_chat.cpp
+    ${TEST_COMMON_SOURCES}
+)
+target_include_directories(test_classic_combat_chat PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_classic_combat_chat SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_classic_combat_chat PRIVATE catch2_main)
+add_test(NAME classic_combat_chat COMMAND test_classic_combat_chat)
+register_test_target(test_classic_combat_chat)
+
 # ── test_damage_meter ────────────────────────────────────────
 add_executable(test_damage_meter
     test_damage_meter.cpp

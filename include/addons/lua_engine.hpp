@@ -311,6 +311,11 @@ private:
     std::string lastError_;
     unsigned long long chunkTimeoutMs_ = 0;
 
+    /// A 1.12 combat log line: the event, the GlobalStrings pattern and its
+    /// arguments, as buildClassicCombatMessage decided them. Formats the
+    /// pattern the interface defines and fires the chat event with the result.
+    void fireClassicCombatLine(const std::vector<std::string>& args);
+
     /// Runs a bootstrap Lua chunk and says so when it fails.
     ///
     /// Seventeen of these ran with their result thrown away, so a syntax error

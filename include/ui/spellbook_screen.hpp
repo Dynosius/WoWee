@@ -2,7 +2,6 @@
 
 #include "game/game_handler.hpp"
 #include <vulkan/vulkan.h>
-#include <imgui.h>
 #include <string>
 #include <vector>
 #include <map>
@@ -38,11 +37,6 @@ public:
     void setOpen(bool o) { open = o; }
 
     // Spell name lookup - triggers DBC load if needed, used by action bar tooltips
-
-    // Rich tooltip - renders a full spell tooltip (inside an already-open BeginTooltip block).
-    // Triggers DBC load if needed. Returns true if spell data was found.
-    bool renderSpellInfoTooltip(uint32_t spellId, game::GameHandler& gameHandler,
-                                pipeline::AssetManager* assetManager);
 
     // Drag-and-drop state for action bar assignment
     [[nodiscard]] bool isDraggingSpell() const { return draggingSpell_; }
@@ -91,10 +85,6 @@ private:
     std::string pendingChatSpellLink_;
 
     void loadSpellDBC(pipeline::AssetManager* assetManager);
-    [[nodiscard]] const SpellInfo* getSpellInfo(uint32_t spellId) const;
-
-    // Tooltip rendering helper (showUsageHints=false when called from action bar)
-    void renderSpellTooltip(const SpellInfo* info, game::GameHandler& gameHandler, bool showUsageHints = true);
 };
 
 } // namespace ui

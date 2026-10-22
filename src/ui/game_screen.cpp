@@ -643,15 +643,13 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         if (cmds.showWho) {
             gameHandler.runInterfaceCommand("ToggleFriendsFrame(2)");
         }
-        // The combat log is a tab of the chat frame in the interfaces that have
-        // one, and a window of this client's own in the two that do not.
+        // The combat log is the chat frame's second window in every
+        // interface: Blizzard_CombatLog's from 2.4 on, and 1.12's own
+        // ChatFrame2 before it. COMBATLOG names it where it exists.
         if (cmds.toggleCombatLog) {
-            if (game::isClassicLikeExpansion()) {
-                combatUI_.showCombatLog_ = !combatUI_.showCombatLog_;
-            } else {
-                gameHandler.runInterfaceCommand(
-                    "if COMBATLOG and FCF_SelectDockFrame then FCF_SelectDockFrame(COMBATLOG) end");
-            }
+            gameHandler.runInterfaceCommand(
+                "local f = COMBATLOG or ChatFrame2 "
+                "if f and FCF_SelectDockFrame then FCF_SelectDockFrame(f) end");
         }
         if (cmds.takeScreenshot) takeScreenshot();
         switch (cmds.recording) {
@@ -680,10 +678,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
         addons::storedCVarValue("enableCombatText", "1") != "0") {
         combatUI_.renderCombatText(gameHandler);
     }
-    // No target frame of ours to park under any more, so the meter takes its
-    // own position. FrameXML's TargetFrame has one, and could be measured the
-    // way the minimap measures MinimapCluster, but nothing reads it yet.
-    combatUI_.renderCombatLog(gameHandler, spellbookScreen);
     // FriendsFrame is what "social" suppresses, and its tabs are the friends
     // list, the who list and the guild roster. Only the friends list was gated
     // on this side, so handing social over left two of this client's three

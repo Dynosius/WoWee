@@ -284,7 +284,6 @@ world with bags, spellbook and map open makes up the standing set.
    - The nameplate context host goes to `UnitPopup`.
    - The quest pane in `map_window` goes to FrameXML's own quest list.
    - The loading screen goes to `paper_ui`'s drawing on `DrawList`.
-   - The Classic combat log window stays, redrawn on `DrawList`.
 6. **ImGui out of the game binary.** The performance HUD becomes rows of text in
    the `Dev` layer, and the first-run screen becomes a `paper_ui` screen (section
    9). Then `imgui_impl_vulkan` and `imgui_impl_sdl3` leave the `wowee` target,

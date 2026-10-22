@@ -1040,8 +1040,6 @@ public:
     // Combat log (persistent rolling history, max MAX_COMBAT_LOG entries)
     const std::deque<CombatLogEntry>& getCombatLog() const;
     uint64_t getCombatLogAppended() const;
-    void clearCombatLog();
-
 
     // Threat
     using ThreatEntry = CombatHandler::ThreatEntry;

@@ -1,5 +1,6 @@
 #include "game/combat_handler.hpp"
 #include "game/combat_log_event.hpp"
+#include "game/classic_combat_chat.hpp"
 #include "audio/ui_sound_manager.hpp"
 #include "addons/lua_api_registrations.hpp"
 #include "game/combat_text_filter.hpp"
@@ -27,6 +28,26 @@
 
 namespace wowee {
 namespace game {
+
+namespace {
+/// Who a unit is to the player, in the terms 1.12 splits its combat chat by.
+/// Another player counts as friendly unless the client knows otherwise, as
+/// the combat log event's flags take them.
+CombatRelation combatRelationOf(GameHandler& gh, uint64_t guid) {
+    if (guid == 0) return CombatRelation::Creature;
+    if (guid == gh.getPlayerGuid()) return CombatRelation::Self;
+    if (guid == gh.getPetGuid()) return CombatRelation::Pet;
+    if (gh.isInGroup()) {
+        for (const auto& m : gh.getPartyData().members) {
+            if (m.guid == guid) return CombatRelation::Party;
+        }
+    }
+    if ((guid >> 48) != 0) return CombatRelation::Creature;
+    const Unit* unit = gh.getUnitByGuid(guid);
+    return (unit && gh.unitReactionToPlayer(*unit) <= 3)
+        ? CombatRelation::HostilePlayer : CombatRelation::FriendlyPlayer;
+}
+}  // namespace
 
 CombatHandler::CombatHandler(GameHandler& owner)
     : owner_(owner) {}
@@ -520,6 +541,28 @@ void CombatHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, ui
         if (!args.empty()) {
             owner_.addonEventCallbackRef()("COMBAT_LOG_EVENT_UNFILTERED", args);
             owner_.addonEventCallbackRef()("COMBAT_LOG_EVENT", args);
+        }
+    }
+
+    // 1.12's combat log is chat: a sentence on one of its CHAT_MSG_COMBAT_*
+    // and CHAT_MSG_SPELL_* events, which the Combat Log tab and the damage
+    // meters written for 1.12 both read.
+    if (owner_.addonEventCallbackRef() && isClassicLikeExpansion()) {
+        ClassicCombatInput in;
+        in.type = type;
+        in.amount = amount;
+        in.powerType = powerType;
+        in.schoolMask = (spellId != 0) ? owner_.getSpellSchoolMask(spellId) : 0;
+        in.spellName = (spellId != 0) ? owner_.getSpellName(spellId) : std::string{};
+        in.srcName = sourceName.empty() ? classic_combat::global("UNKNOWN") : sourceName;
+        in.dstName = targetName.empty() ? classic_combat::global("UNKNOWN") : targetName;
+        in.src = combatRelationOf(owner_, effectiveSrc);
+        in.dst = combatRelationOf(owner_, effectiveDst);
+        const ClassicCombatMessage line = buildClassicCombatMessage(in);
+        if (!line.event.empty()) {
+            std::vector<std::string> args{line.event, line.pattern};
+            args.insert(args.end(), line.args.begin(), line.args.end());
+            owner_.addonEventCallbackRef()(classic_combat::kLineEvent, args);
         }
     }
 }

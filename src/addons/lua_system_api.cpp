@@ -2994,6 +2994,39 @@ inline constexpr const char* kDefaultChatGroups[] = {
     "GUILD_ACHIEVEMENT", "CHANNEL", "TARGETICONS",
 };
 
+/// What 1.12's Combat Log window shows by default: the groups
+/// ChatFrame_ActivateCombatMessages adds, which is what FCF_ResetChatWindows
+/// gives ChatFrame2. 2.4.3 and 3.3.5 leave that window's list empty, because
+/// Blizzard_CombatLog registers it for its own event; 1.12 has no such addon
+/// and its combat log is these chat events.
+inline constexpr const char* kClassicCombatLogGroups[] = {
+    "COMBAT_MISC_INFO", "COMBAT_SELF_HITS", "COMBAT_SELF_MISSES",
+    "COMBAT_PET_HITS", "COMBAT_PET_MISSES", "COMBAT_PARTY_HITS",
+    "COMBAT_PARTY_MISSES", "COMBAT_FRIENDLYPLAYER_HITS",
+    "COMBAT_FRIENDLYPLAYER_MISSES", "COMBAT_HOSTILEPLAYER_HITS",
+    "COMBAT_HOSTILEPLAYER_MISSES", "COMBAT_CREATURE_VS_SELF_HITS",
+    "COMBAT_CREATURE_VS_SELF_MISSES", "COMBAT_CREATURE_VS_PARTY_HITS",
+    "COMBAT_CREATURE_VS_PARTY_MISSES", "COMBAT_CREATURE_VS_CREATURE_HITS",
+    "COMBAT_CREATURE_VS_CREATURE_MISSES", "COMBAT_FRIENDLY_DEATH",
+    "COMBAT_HOSTILE_DEATH", "COMBAT_XP_GAIN", "COMBAT_HONOR_GAIN",
+    "SPELL_SELF_DAMAGE", "SPELL_SELF_BUFF", "SPELL_PET_DAMAGE", "SPELL_PET_BUFF",
+    "SPELL_PARTY_DAMAGE", "SPELL_PARTY_BUFF", "SPELL_FRIENDLYPLAYER_DAMAGE",
+    "SPELL_FRIENDLYPLAYER_BUFF", "SPELL_HOSTILEPLAYER_DAMAGE",
+    "SPELL_HOSTILEPLAYER_BUFF", "SPELL_CREATURE_VS_SELF_DAMAGE",
+    "SPELL_CREATURE_VS_SELF_BUFF", "SPELL_CREATURE_VS_PARTY_DAMAGE",
+    "SPELL_CREATURE_VS_PARTY_BUFF", "SPELL_CREATURE_VS_CREATURE_DAMAGE",
+    "SPELL_CREATURE_VS_CREATURE_BUFF", "SPELL_TRADESKILLS",
+    "SPELL_DAMAGESHIELDS_ON_SELF", "SPELL_DAMAGESHIELDS_ON_OTHERS",
+    "SPELL_AURA_GONE_SELF", "SPELL_AURA_GONE_PARTY", "SPELL_AURA_GONE_OTHER",
+    "SPELL_ITEM_ENCHANTMENTS", "SPELL_BREAK_AURA", "SPELL_PERIODIC_SELF_DAMAGE",
+    "SPELL_PERIODIC_SELF_BUFFS", "SPELL_PERIODIC_PARTY_DAMAGE",
+    "SPELL_PERIODIC_PARTY_BUFFS", "SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE",
+    "SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS", "SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE",
+    "SPELL_PERIODIC_HOSTILEPLAYER_BUFFS", "SPELL_PERIODIC_CREATURE_DAMAGE",
+    "SPELL_PERIODIC_CREATURE_BUFFS", "SPELL_FAILED_LOCALPLAYER",
+    "COMBAT_FACTION_CHANGE",
+};
+
 /// NUM_CHAT_WINDOWS in 3.3.5. Indices are one-based from Lua.
 static constexpr int kNumChatWindows = 10;
 
@@ -6304,6 +6337,14 @@ void registerSystemLuaAPI(lua_State* L) {
             if (w->messageGroups.empty() && lua_tonumber(L, 1) == 1) {
                 for (const char* g : kDefaultChatGroups) lua_pushstring(L, g);
                 return static_cast<int>(std::size(kDefaultChatGroups));
+            }
+            // The same rule for 1.12's Combat Log window, whose defaults are
+            // the combat groups. Unanswered, ChatFrame2 registered for nothing
+            // and the tab stayed empty however much fighting there was.
+            if (w->messageGroups.empty() && lua_tonumber(L, 1) == 2 &&
+                interfaceVersion(L) > 0 && interfaceVersion(L) < 20000) {
+                for (const char* g : kClassicCombatLogGroups) lua_pushstring(L, g);
+                return static_cast<int>(std::size(kClassicCombatLogGroups));
             }
             for (const auto& g : w->messageGroups) lua_pushstring(L, g.c_str());
             return static_cast<int>(w->messageGroups.size());

@@ -28,6 +28,7 @@
 #include "addons/lua_api_registrations.hpp"
 #include "addons/toc_parser.hpp"
 #include "core/window.hpp"
+#include "game/classic_combat_chat.hpp"
 #include <imgui.h>
 #include <fstream>
 #include "core/app_clock.hpp"
@@ -9211,11 +9212,61 @@ int pushCombatLogCurrent(lua_State* L) {
     return static_cast<int>(args.size());
 }
 
+void LuaEngine::fireClassicCombatLine(const std::vector<std::string>& args) {
+    if (!L_ || args.size() < 2) return;
+    lua_State* L = L_;
+    const int top = lua_gettop(L);
+    // Said once per pattern: a name the interface does not define is a line
+    // that never appears, and nothing else in the log would say why.
+    static std::set<std::string> reported;
+    lua_getglobal(L, "string");
+    lua_getfield(L, -1, "format");
+    lua_getglobal(L, args[1].c_str());
+    if (lua_type(L, -1) != LUA_TSTRING) {
+        if (reported.insert(args[1]).second) {
+            LOG_WARNING("Combat log: the interface has no ", args[1],
+                        ", so ", args[0], " lines of that kind are not shown");
+        }
+        lua_settop(L, top);
+        return;
+    }
+    for (size_t i = 2; i < args.size(); ++i) {
+        const std::string& a = args[i];
+        if (!a.empty() && a[0] == game::classic_combat::kGlobalArg) {
+            lua_getglobal(L, a.c_str() + 1);
+            if (lua_type(L, -1) != LUA_TSTRING) {
+                lua_pop(L, 1);
+                lua_pushstring(L, a.c_str() + 1);
+            }
+        } else {
+            lua_pushlstring(L, a.data(), a.size());
+        }
+    }
+    if (lua_pcall(L, static_cast<int>(args.size()) - 1, 1, 0) != 0) {
+        if (reported.insert(args[1]).second) {
+            LOG_WARNING("Combat log: ", args[1], " would not format: ",
+                        lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
+        }
+        lua_settop(L, top);
+        return;
+    }
+    std::string text = lua_tostring(L, -1) ? lua_tostring(L, -1) : "";
+    lua_settop(L, top);
+    // The arguments every chat event carries, blank. ChatFrame_OnEvent takes
+    // strlen(arg4) before it looks at the type, so a missing one is an error
+    // rather than an empty channel.
+    fireEvent(args[0], {text, "", "", "", "", "", "0", "0", "", "0", "0", ""});
+}
+
 void LuaEngine::fireEvent(const std::string& eventName,
                            const std::vector<std::string>& args) {
     if (!L_) return;
 
     if (eventName == "COMBAT_LOG_EVENT_UNFILTERED") recordCombatLogEvent(args);
+    if (eventName == game::classic_combat::kLineEvent) {
+        fireClassicCombatLine(args);
+        return;
+    }
 
     // The trade skill list may change shape now, and only now. It is held still
     // between these events because the frame reads it many times to draw one

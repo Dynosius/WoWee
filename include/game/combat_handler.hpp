@@ -52,7 +52,6 @@ public:
     /// How many entries the log has ever been given. It holds the last 500, so
     /// this, not its size, says how many arrived since a reader last looked.
     [[nodiscard]] uint64_t getCombatLogAppended() const { return combatLogAppended_; }
-    void clearCombatLog() { combatLog_.clear(); }
 
     // Threat
     struct ThreatEntry {
