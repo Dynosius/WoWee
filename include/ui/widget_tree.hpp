@@ -1093,7 +1093,14 @@ private:
     /// caller that holds a Widget* across creating a child. A deque keeps
     /// references valid when it grows, which is the guarantee this needs.
     float uiScale_ = 1.0f;
+#ifdef __ANDROID__
+    // A phone shows the interface's 768 units in under three inches of
+    // height, where 1 reads small. The ceiling is the largest scale the frames
+    // still fit at, so it starts there; a UI Scale the player saved still wins.
+    float userScale_ = kMaxUserScale;
+#else
     float userScale_ = 1.0f;
+#endif
     std::vector<uint32_t> scrollFrames_;
     /// Ids that ever called EnableKeyboard(true), ascending. See keyboardFrames.
     std::vector<uint32_t> keyboardFrames_;
