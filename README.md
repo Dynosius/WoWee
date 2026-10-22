@@ -535,9 +535,7 @@ the server then sends no checks, which most servers tolerate. See the
 - Shadows cannot be turned off: doing so loses the GPU device, so the control is
   held on until that is found.
 - Warden check answers are graded against AzerothCore's check list; those of
-  vmangos and CMaNGOS realms are not graded yet. A Warden code scan takes about
-  ten seconds and is answered off the main thread, so a round of checks is
-  answered within a minute or two.
+  vmangos and CMaNGOS realms are not graded yet.
 - Where terrain meets a building, the character can occasionally take the wrong
   floor or stick. Enter `/unstuck` in chat to recover, press `F8` to write the
   floor data at your position to the log, and include the location and those

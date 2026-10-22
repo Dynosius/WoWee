@@ -263,6 +263,21 @@ TEST_CASE("every AzerothCore memory check reads what a genuine 3.3.5a client hol
     CHECK(failures.empty());
 }
 
+TEST_CASE("AzerothCore's code scans find nothing in a genuine 3.3.5a client", "[wardengrader]") {
+    // The same answer as without an executable, but by searching one: a scan
+    // that matched genuine code by mistake would answer 0x4A and fail.
+    const char* exe = std::getenv("WOWEE_TEST_WOW_EXE");
+    if (!exe || !std::filesystem::exists(exe)) SKIP("WOWEE_TEST_WOW_EXE does not name a WoW.exe");
+    WardenMemory memory;
+    REQUIRE(memory.loadFromFile(exe));
+
+    const auto checks = checksWhere([](const AcCheck& c) { return c.type == PAGE_CHECK_A || c.type == PAGE_CHECK_B; });
+    REQUIRE(checks.size() >= 20);
+    const auto failures = run(checks, &memory, 0x5C);
+    for (const auto& f : failures) UNSCOPED_INFO(f);
+    CHECK(failures.empty());
+}
+
 TEST_CASE("the grader fails the answers that got an account banned", "[wardengrader]") {
     // 0x00 for a scan that found nothing, which vmangos takes as clean and
     // AzerothCore penalises; and a reply whose checksum does not match.

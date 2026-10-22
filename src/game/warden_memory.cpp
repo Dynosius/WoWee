@@ -1,7 +1,10 @@
 #include "game/warden_memory.hpp"
+#include "game/warden_hmac.hpp"
 #include "core/logger.hpp"
 #include "core/data_paths.hpp"
 #include <chrono>
+#include <thread>
+#include <atomic>
 #include <fstream>
 #include <cstring>
 #include <cstdlib>
@@ -966,15 +969,12 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
         return cacheIt->second;
     }
 
+    const WardenHmacSha1 hmac(seed, 4);
+
     // --- Fast path: check the hint offset directly (single HMAC) ---
     // The PAGE_A offset field is the RVA where the server expects the pattern.
     if (hintOffset > 0 && hintOffset + patternLen <= imageSize_) {
-        uint8_t hmacOut[20];
-        unsigned int hmacLen = 0;
-        HMAC(EVP_sha1(), seed, 4,
-             image_.data() + hintOffset, patternLen,
-             hmacOut, &hmacLen);
-        if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
+        if (hmac.matches(image_.data() + hintOffset, patternLen, expectedHash)) {
             LOG_DEBUG("WardenMemory: Code pattern found at hint RVA 0x", std::hex,
                         hintOffset, std::dec, " (direct hit)");
             codePatternCache_[cacheKey] = true;
@@ -990,12 +990,7 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
         if (winEnd > winStart + patternLen) {
             for (size_t i = winStart; i + patternLen <= winEnd; i++) {
                 if (i == hintOffset) continue; // already checked
-                uint8_t hmacOut[20];
-                unsigned int hmacLen = 0;
-                HMAC(EVP_sha1(), seed, 4,
-                     image_.data() + i, patternLen,
-                     hmacOut, &hmacLen);
-                if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
+                if (hmac.matches(image_.data() + i, patternLen, expectedHash)) {
                     LOG_DEBUG("WardenMemory: Code pattern found at RVA 0x", std::hex, i,
                                 std::dec, " (hint window, delta=", static_cast<int>(i) - static_cast<int>(hintOffset), ")");
                     codePatternCache_[cacheKey] = true;
@@ -1042,32 +1037,48 @@ bool WardenMemory::searchCodePattern(const uint8_t seed[4], const uint8_t expect
     LOG_DEBUG("WardenMemory: Brute-force searching ", ranges.size(), " section(s), hint=0x",
                 std::hex, hintOffset, std::dec, " patLen=", static_cast<int>(patternLen));
 
+    // Every position of every section, split across the cores; a hit stops
+    // the rest. The answer is the same whichever thread finds it.
     size_t totalPositions = 0;
-    for (const auto& r : ranges) {
-        size_t positions = r.end - r.start - patternLen + 1;
-        for (size_t i = 0; i < positions; i++) {
-            uint8_t hmacOut[20];
-            unsigned int hmacLen = 0;
-            HMAC(EVP_sha1(), seed, 4,
-                 image_.data() + r.start + i, patternLen,
-                 hmacOut, &hmacLen);
-            if (hmacLen == 20 && std::memcmp(hmacOut, expectedHash, 20) == 0) {
-                auto elapsed = std::chrono::duration<float>(
-                    std::chrono::steady_clock::now() - bruteStart).count();
-                LOG_DEBUG("WardenMemory: Code pattern found at RVA 0x", std::hex,
-                            r.start + i, std::dec, " (searched ", totalPositions + i + 1,
-                            " positions in ", elapsed, "s)");
-                codePatternCache_[cacheKey] = true;
-                return true;
+    for (const auto& r : ranges) totalPositions += r.end - r.start - patternLen + 1;
+    const unsigned threadCount = std::clamp(std::thread::hardware_concurrency(), 1u, 16u);
+    std::atomic<bool> found{false};
+    std::atomic<size_t> foundAt{0};
+    auto scan = [&](unsigned part) {
+        for (const auto& r : ranges) {
+            const size_t positions = r.end - r.start - patternLen + 1;
+            const size_t chunk = (positions + threadCount - 1) / threadCount;
+            const size_t begin = r.start + std::min(positions, size_t(part) * chunk);
+            const size_t end = r.start + std::min(positions, size_t(part + 1) * chunk);
+            for (size_t i = begin; i < end; ++i) {
+                if ((i & 0xFFF) == 0 && found.load(std::memory_order_relaxed)) return;
+                if (hmac.matches(image_.data() + i, patternLen, expectedHash)) {
+                    foundAt.store(i);
+                    found.store(true);
+                    return;
+                }
             }
         }
-        totalPositions += positions;
+    };
+    {
+        std::vector<std::thread> workers;
+        for (unsigned t = 1; t < threadCount; ++t) workers.emplace_back(scan, t);
+        scan(0);
+        for (auto& w : workers) w.join();
+    }
+    if (found) {
+        auto elapsed = std::chrono::duration<float>(
+            std::chrono::steady_clock::now() - bruteStart).count();
+        LOG_DEBUG("WardenMemory: Code pattern found at RVA 0x", std::hex, foundAt.load(), std::dec,
+                  " (", threadCount, " threads, ", elapsed, "s)");
+        codePatternCache_[cacheKey] = true;
+        return true;
     }
 
     auto elapsed = std::chrono::duration<float>(
         std::chrono::steady_clock::now() - bruteStart).count();
     LOG_DEBUG("WardenMemory: Code pattern NOT found after ", totalPositions, " positions in ",
-                ranges.size(), " section(s), took ", elapsed, "s");
+                ranges.size(), " section(s) on ", threadCount, " threads, took ", elapsed, "s");
     codePatternCache_[cacheKey] = false;
     return false;
 }

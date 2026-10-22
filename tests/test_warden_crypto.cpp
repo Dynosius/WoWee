@@ -6,10 +6,16 @@
 // drops the connection without saying why.
 #include <catch_amalgamated.hpp>
 #include "game/warden_crypto.hpp"
+#include "game/warden_hmac.hpp"
+
+#include <cstring>
+#include <openssl/hmac.h>
+#include <openssl/sha.h>
 
 #include <utility>
 
 using wowee::game::WardenCrypto;
+using wowee::game::WardenHmacSha1;
 
 namespace {
 // RC4 key schedule, laid out as a module hands it over: [256 S][i][j].
@@ -60,4 +66,27 @@ TEST_CASE("a state of the wrong size is refused and the cipher left alone", "[wa
 
     const std::vector<uint8_t> probe(16, 0xA5);
     CHECK(after.encrypt(probe) == before.encrypt(probe));
+}
+
+TEST_CASE("the code-scan HMAC agrees with OpenSSL's for every length a scan uses", "[wardencrypto]") {
+    // A scan that hashes wrongly finds nothing, and "nothing" is the clean
+    // answer - so a broken HMAC would pass every check until a server asked
+    // for something that is there.
+    std::vector<uint8_t> data(200);
+    for (size_t i = 0; i < data.size(); ++i) data[i] = static_cast<uint8_t>(i * 37 + 11);
+    for (const std::vector<uint8_t>& key : {std::vector<uint8_t>{0x13, 0x37, 0xC0, 0xDE},
+                                            std::vector<uint8_t>{0, 0, 0, 0},
+                                            std::vector<uint8_t>{0xFF, 0x01, 0x80, 0x7F}}) {
+        const WardenHmacSha1 fast(key.data(), key.size());
+        for (size_t len = 0; len <= 150; ++len) {
+            uint8_t expected[SHA_DIGEST_LENGTH];
+            unsigned int outLen = 0;
+            HMAC(EVP_sha1(), key.data(), static_cast<int>(key.size()), data.data() + 3, len, expected, &outLen);
+            uint8_t got[20];
+            fast.digest(data.data() + 3, len, got);
+            INFO("length " << len);
+            REQUIRE(std::memcmp(got, expected, 20) == 0);
+            CHECK(fast.matches(data.data() + 3, len, expected));
+        }
+    }
 }
