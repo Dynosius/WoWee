@@ -27,6 +27,14 @@ public:
     bool loadFromFile(const std::string& exePath);
 
     /**
+     * The build number an executable says it is, from the VS_FIXEDFILEINFO
+     * in its version resource (the low word of the file version), or 0 when
+     * it carries none. A WoW.exe of another build answers every memory check
+     * from the wrong bytes, and nothing else about the file says so.
+     */
+    static uint16_t fileBuildOf(const uint8_t* data, size_t size);
+
+    /**
      * Read bytes from virtual address space.
      * Handles PE sections + KUSER_SHARED_DATA mock.
      */

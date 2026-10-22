@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <sstream>
 #include <iomanip>
+#include <iterator>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
 
@@ -617,6 +618,27 @@ uint32_t WardenMemory::expectedImageSizeForBuild(uint16_t build, bool isTurtle) 
     }
 }
 
+uint16_t WardenMemory::fileBuildOf(const uint8_t* data, size_t size) {
+    // VS_FIXEDFILEINFO: [4 signature 0xFEEF04BD][4 struct version]
+    // [4 file version MS][4 file version LS], the build in the low word of LS.
+    static constexpr uint8_t kSignature[4] = {0xBD, 0x04, 0xEF, 0xFE};
+    if (size < 16) return 0;
+    for (size_t i = 0; i + 16 <= size; ++i) {
+        if (std::memcmp(data + i, kSignature, 4) != 0) continue;
+        return static_cast<uint16_t>(data[i + 12] | (data[i + 13] << 8));
+    }
+    return 0;
+}
+
+namespace {
+uint16_t fileBuildOfPath(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return 0;
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    return WardenMemory::fileBuildOf(bytes.data(), bytes.size());
+}
+}  // namespace
+
 std::string WardenMemory::findWowExe(uint16_t build) const {
     std::vector<std::string> candidateDirs;
     if (const char* env = std::getenv("WOWEE_INTEGRITY_DIR")) {
@@ -635,6 +657,8 @@ std::string WardenMemory::findWowExe(uint16_t build) const {
     for (const std::string& root : core::extractionRoots()) {
         candidateDirs.push_back(root + "/expansions/turtle/misc");
         candidateDirs.push_back(root + "/expansions/classic/misc");
+        candidateDirs.push_back(root + "/expansions/tbc/misc");
+        candidateDirs.push_back(root + "/expansions/wotlk/misc");
         candidateDirs.push_back(root + "/misc");
         candidateDirs.push_back(root + "/expansions/turtle/overlay/misc");
     }
@@ -656,6 +680,14 @@ std::string WardenMemory::findWowExe(uint16_t build) const {
                     allPaths.push_back(path);
                 }
             }
+        }
+    }
+
+    // An executable that says it is this build is the one the server's
+    // checks were written against.
+    if (build != 0) {
+        for (const auto& path : allPaths) {
+            if (fileBuildOfPath(path) == build) return path;
         }
     }
 
@@ -707,6 +739,15 @@ bool WardenMemory::load(uint16_t build, bool isTurtle) {
         return false;
     }
     LOG_WARNING("WardenMemory: Loading PE image: ", path, " (build=", build, ")");
+    // Said here because nothing downstream can tell: memory checks are served
+    // from whatever this file holds, and a server that checks them closes the
+    // connection without a reason.
+    if (const uint16_t fileBuild = fileBuildOfPath(path); build != 0 && fileBuild != 0 && fileBuild != build) {
+        LOG_WARNING("WardenMemory: ", path, " is build ", fileBuild, ", not ", build,
+                    " - memory checks will answer with the wrong bytes, and a realm that "
+                    "checks them disconnects. Put the build ", build, " WoW.exe in "
+                    "Data/expansions/<id>/misc or $WOWEE_INTEGRITY_DIR");
+    }
     return loadFromFile(path);
 }
 
