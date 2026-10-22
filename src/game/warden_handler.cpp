@@ -28,6 +28,13 @@ namespace game {
 
 namespace {
 
+// What a real client answers to a PAGE_A/PAGE_B, MODULE or DRIVER scan.
+// vmangos and CMaNGOS read anything but 0x4A as not found; TrinityCore and
+// AzerothCore pass only 0xE9 and penalise everything else, 0x00 included -
+// so 0xE9 is the one "not found" that every server takes as clean.
+constexpr uint8_t kWardenScanFound = 0x4A;
+constexpr uint8_t kWardenScanNotFound = 0xE9;
+
 std::string asciiLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -755,7 +762,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                                     constexpr size_t kPageSize = 29;
                                     const char* pageName = (ct == CT_PAGE_A) ? "PAGE_A" : "PAGE_B";
                                     bool isImageOnly = (ct == CT_PAGE_A);
-                                    if (pos + kPageSize > checkEnd) { pos = checkEnd; resultData.push_back(0x00); break; }
+                                    if (pos + kPageSize > checkEnd) { pos = checkEnd; resultData.push_back(kWardenScanNotFound); break; }
                                     const uint8_t* p = decrypted.data() + pos;
                                     const uint8_t* seed = p;
                                     const uint8_t* sha1 = p + 4;
@@ -784,7 +791,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                                         found = true;
                                         turtleFallback = true;
                                     }
-                                    uint8_t pageResult = found ? 0x4A : 0x00;
+                                    uint8_t pageResult = found ? kWardenScanFound : kWardenScanNotFound;
                                     LOG_WARNING("Warden:   ", pageName, " offset=0x",
                                                 [&]{char s[12];snprintf(s,12,"%08x",off);return std::string(s);}(),
                                                 " patLen=", (int)patLen, " found=", found ? "yes" : "no",
@@ -828,11 +835,11 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                                     pos += 24;
                                     uint8_t strIdx = decrypted[pos++];
                                     std::string dn = resolveString(strIdx);
-                                    LOG_WARNING("Warden:   DRIVER=\"", (dn.empty() ? "?" : dn), "\" -> 0x00(not found)");
-                                    resultData.push_back(0x00); break;
+                                    LOG_WARNING("Warden:   DRIVER=\"", (dn.empty() ? "?" : dn), "\" -> 0xE9(not found)");
+                                    resultData.push_back(kWardenScanNotFound); break;
                                 }
                                 case CT_MODULE: {
-                                    if (pos + 24 > checkEnd) { pos = checkEnd; resultData.push_back(0x00); break; }
+                                    if (pos + 24 > checkEnd) { pos = checkEnd; resultData.push_back(kWardenScanNotFound); break; }
                                     const uint8_t* p = decrypted.data() + pos;
                                     uint8_t sb[4] = {p[0],p[1],p[2],p[3]};
                                     uint8_t rh[20]; std::memcpy(rh, p+4, 20);
@@ -858,7 +865,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                                         else if (hmacSha1Matches(sb,"OPENGL32.DLL",rh)) { mn = "OPENGL32.DLL"; isWanted = true; }
                                         else if (hmacSha1Matches(sb,"WINMM.DLL",rh)) { mn = "WINMM.DLL"; isWanted = true; }
                                     }
-                                    uint8_t mr = isWanted ? 0x4A : 0x00;
+                                    uint8_t mr = isWanted ? kWardenScanFound : kWardenScanNotFound;
                                     LOG_WARNING("Warden:   MODULE \"", mn, "\" -> 0x",
                                                 [&]{char s[4];snprintf(s,4,"%02x",mr);return std::string(s);}(),
                                                 isWanted ? "(found)" : "(not found)");
@@ -1117,12 +1124,12 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                                 LOG_WARNING("Warden:   PAGE_A check truncated (remaining=", remaining,
                                             "), consuming remainder");
                                 pos = checkEnd;
-                                resultData.push_back(0x00);
+                                resultData.push_back(kWardenScanNotFound);
                                 break;
                             }
                         }
 
-                        uint8_t pageResult = 0x00;
+                        uint8_t pageResult = kWardenScanNotFound;
                         if (consume >= 29) {
                             const uint8_t* p = decrypted.data() + pos;
                             uint8_t seedBytes[4] = { p[0], p[1], p[2], p[3] };
@@ -1132,15 +1139,15 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                                            (uint32_t(p[26]) << 16) | (uint32_t(p[27]) << 24);
                             uint8_t len = p[28];
                             if (isKnownWantedCodeScan(seedBytes, reqHash, off, len)) {
-                                pageResult = 0x4A;
+                                pageResult = kWardenScanFound;
                             } else if (wardenMemory_ && wardenMemory_->isLoaded() && len > 0) {
                                 if (wardenMemory_->searchCodePattern(seedBytes, reqHash, len, true, off))
-                                    pageResult = 0x4A;
+                                    pageResult = kWardenScanFound;
                             }
                             // Turtle PAGE_A fallback: runtime-patched offsets aren't in the
                             // on-disk PE. Server expects "found" for code integrity checks.
-                            if (pageResult == 0x00 && isActiveExpansion("turtle") && off < 0x600000) {
-                                pageResult = 0x4A;
+                            if (pageResult == kWardenScanNotFound && isActiveExpansion("turtle") && off < 0x600000) {
+                                pageResult = kWardenScanFound;
                                 LOG_WARNING("Warden:   PAGE_A turtle-fallback for offset=0x",
                                             [&]{char s[12];snprintf(s,12,"%08x",off);return std::string(s);}());
                             }
@@ -1181,7 +1188,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                             else if (remaining >= kPageBLong) consume = kPageBLong;
                             else { pos = checkEnd; break; }
                         }
-                        uint8_t pageResult = 0x00;
+                        uint8_t pageResult = kWardenScanNotFound;
                         if (consume >= 29) {
                             const uint8_t* p = decrypted.data() + pos;
                             uint8_t seedBytes[4] = { p[0], p[1], p[2], p[3] };
@@ -1191,7 +1198,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                                            (uint32_t(p[26]) << 16) | (uint32_t(p[27]) << 24);
                             uint8_t len = p[28];
                             if (isKnownWantedCodeScan(seedBytes, reqHash, off, len)) {
-                                pageResult = 0x4A; // PatternFound
+                                pageResult = kWardenScanFound;
                             }
                         }
                         LOG_DEBUG("Warden:   PAGE_B request bytes=", consume,
@@ -1261,8 +1268,8 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                         pos += 24; // skip seed + sha1
                         uint8_t strIdx = decrypted[pos++];
                         std::string driverName = resolveWardenString(strIdx);
-                        LOG_WARNING("Warden:   (sync) DRIVER=\"", (driverName.empty() ? "?" : driverName), "\" -> 0x00(not found)");
-                        resultData.push_back(0x00);
+                        LOG_WARNING("Warden:   (sync) DRIVER=\"", (driverName.empty() ? "?" : driverName), "\" -> 0xE9(not found)");
+                        resultData.push_back(kWardenScanNotFound);
                         break;
                     }
                     case CT_MODULE: {
@@ -1301,13 +1308,13 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                             else if (hmacSha1Matches(seedBytes, "D3DHOOK.DLL", reqHash)) modName = "D3DHOOK.DLL";
                             else if (hmacSha1Matches(seedBytes, "NJUMD.DLL", reqHash)) modName = "NJUMD.DLL";
                             LOG_WARNING("Warden:   (sync) MODULE \"", modName,
-                                        "\" -> 0x", [&]{char s[4];snprintf(s,4,"%02x",shouldReportFound?0x4A:0x00);return std::string(s);}(),
+                                        "\" -> 0x", [&]{char s[4];snprintf(s,4,"%02x",shouldReportFound?kWardenScanFound:kWardenScanNotFound);return std::string(s);}(),
                                         "(", shouldReportFound ? "found" : "not found", ")");
-                            resultData.push_back(shouldReportFound ? 0x4A : 0x00);
+                            resultData.push_back(shouldReportFound ? kWardenScanFound : kWardenScanNotFound);
                             break;
                         }
                         // Truncated module request fallback: module NOT loaded = clean
-                        resultData.push_back(0x00);
+                        resultData.push_back(kWardenScanNotFound);
                         break;
                     }
                     case CT_PROC: {

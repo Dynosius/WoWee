@@ -133,15 +133,17 @@ XORed with the request's last byte. `WardenHandler::handleWardenData` answers ea
 | Check type | Reply |
 |------------|-------|
 | `READ_MEMORY` (MEM) | `0x00` + bytes read from the `WoW.exe` image, or `0xE9` if unmapped |
-| `FIND_MEM_IMAGE_CODE_BY_HASH` / `FIND_CODE_BY_HASH` (PAGE_A/B) | `0x4A` if an HMAC-SHA1 pattern search of the image finds it, else `0x00` |
+| `FIND_MEM_IMAGE_CODE_BY_HASH` / `FIND_CODE_BY_HASH` (PAGE_A/B) | `0x4A` if an HMAC-SHA1 pattern search of the image finds it, else `0xE9` |
 | `HASH_CLIENT_FILE` (MPQ) | `0x00` + SHA1 of the file via the asset manager, else `0x01` |
 | `GET_LUA_VARIABLE` (LUA) | `0x01` (not found) |
-| `FIND_MODULE_BY_NAME` (MODULE) | `0x4A` for standard system DLLs, `0x00` otherwise |
-| `FIND_DRIVER_BY_NAME` (DRIVER) | `0x00` (not found) |
+| `FIND_MODULE_BY_NAME` (MODULE) | `0x4A` for standard system DLLs, `0xE9` otherwise |
+| `FIND_DRIVER_BY_NAME` (DRIVER) | `0xE9` (not found) |
 | `API_CHECK` (PROC) | `0x01` (not found) |
 | `CHECK_TIMING_VALUES` (TIMING) | `0x01` + millisecond tick count |
 
-The reply is `[0x02][uint16 length][uint32 checksum][results]`, the checksum being the
+"Not found" is `0xE9` because that is the only value TrinityCore and AzerothCore pass;
+vmangos and CMaNGOS take anything but `0x4A` as not found. The reply is
+`[0x02][uint16 length][uint32 checksum][results]`, the checksum being the
 XOR of the five words of SHA1(results).
 
 `WardenMemory` loads the `WoW.exe` image the memory and code checks read from. It looks
