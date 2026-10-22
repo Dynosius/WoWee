@@ -1,4 +1,5 @@
 #include "game/combat_handler.hpp"
+#include "game/combat_log_event.hpp"
 #include "audio/ui_sound_manager.hpp"
 #include "addons/lua_api_registrations.hpp"
 #include "game/combat_text_filter.hpp"
@@ -493,32 +494,30 @@ void CombatHandler::addCombatText(CombatTextEntry::Type type, int32_t amount, ui
         combatLog_.pop_front();
     combatLog_.push_back(std::move(log));
 
-    // Fire COMBAT_LOG_EVENT_UNFILTERED for Lua addons
-    // Args: subevent, sourceGUID, sourceName, 0 (sourceFlags), destGUID, destName, 0 (destFlags), spellId, spellName, amount
+    // The combat log's own events, in the layout Blizzard_CombatLog parses.
+    // The unfiltered one is what addons listen for; the filtered one is what the
+    // log window itself is registered to, and nothing fired it, so the window
+    // was empty however much fighting there was. No filter is applied here: the
+    // window applies its own settings to what it is given.
     if (owner_.addonEventCallbackRef()) {
-        static const char* kSubevents[] = {
-            "SWING_DAMAGE", "SPELL_DAMAGE", "SPELL_HEAL", "SWING_MISSED", "SWING_MISSED",
-            "SWING_MISSED", "SWING_MISSED", "SWING_MISSED", "SPELL_DAMAGE", "SPELL_HEAL",
-            "SPELL_PERIODIC_DAMAGE", "SPELL_PERIODIC_HEAL", "ENVIRONMENTAL_DAMAGE",
-            "SPELL_ENERGIZE", "SPELL_DRAIN", "PARTY_KILL", "SPELL_MISSED", "SPELL_ABSORBED",
-            "SPELL_MISSED", "SPELL_MISSED", "SPELL_MISSED", "SPELL_AURA_APPLIED",
-            "SPELL_DISPEL", "SPELL_STOLEN", "SPELL_INTERRUPT", "SPELL_INSTAKILL",
-            "PARTY_KILL", "SWING_DAMAGE", "SWING_DAMAGE"
-        };
-        const char* subevent = (type < sizeof(kSubevents)/sizeof(kSubevents[0]))
-            ? kSubevents[type] : "UNKNOWN";
-        char srcBuf[32], dstBuf[32];
-        snprintf(srcBuf, sizeof(srcBuf), "0x%016llX", (unsigned long long)effectiveSrc);
-        snprintf(dstBuf, sizeof(dstBuf), "0x%016llX", (unsigned long long)effectiveDst);
-        std::string spellName = (spellId != 0) ? owner_.getSpellName(spellId) : std::string{};
-        std::string timestamp = std::to_string(static_cast<double>(std::time(nullptr)));
-        owner_.addonEventCallbackRef()("COMBAT_LOG_EVENT_UNFILTERED", {
-            timestamp, subevent,
-            srcBuf, sourceName, "0",
-            dstBuf, targetName, "0",
-            std::to_string(spellId), spellName,
-            std::to_string(amount)
-        });
+        CombatLogEventInput input;
+        input.type = type;
+        input.amount = amount;
+        input.spellId = spellId;
+        input.powerType = powerType;
+        input.srcGuid = effectiveSrc;
+        input.dstGuid = effectiveDst;
+        input.playerGuid = owner_.getPlayerGuid();
+        input.petGuid = owner_.getPetGuid();
+        input.srcName = sourceName;
+        input.dstName = targetName;
+        input.spellName = (spellId != 0) ? owner_.getSpellName(spellId) : std::string{};
+        input.timestamp = static_cast<int64_t>(std::time(nullptr));
+        const std::vector<std::string> args = buildCombatLogEvent(input);
+        if (!args.empty()) {
+            owner_.addonEventCallbackRef()("COMBAT_LOG_EVENT_UNFILTERED", args);
+            owner_.addonEventCallbackRef()("COMBAT_LOG_EVENT", args);
+        }
     }
 }
 

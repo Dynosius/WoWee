@@ -964,6 +964,24 @@ const game::GameHandler::CraftRecipe* recipeAtTradeSkillRow(game::GameHandler* g
 /// through. Called when the game says the trade skill data moved.
 void invalidateTradeSkillRows();
 
+/// The combat log's stored history, which Blizzard_CombatLog walks to refill
+/// its window when it is opened or refiltered. Each entry is the argument list
+/// of one COMBAT_LOG_EVENT_UNFILTERED, kept as it was fired so the log can hand
+/// it back to the same parser that read it live.
+///
+/// Entries are numbered by age: 0 is the newest, and the walk Blizzard does
+/// goes toward the oldest. The history is bounded; the oldest go first.
+void recordCombatLogEvent(const std::vector<std::string>& args);
+int combatLogEntryCount();
+/// Point at an entry by age, clamped to the history. 0 is the newest.
+void combatLogSetCursor(int age);
+/// Move the cursor by a count, negative toward older entries. False when that
+/// runs off the end of the history, where the cursor stays on the last entry.
+bool combatLogAdvanceCursor(int count);
+/// Push the arguments of the entry the cursor is on. Returns how many were
+/// pushed, zero when there is no entry.
+int pushCombatLogCurrent(lua_State* L);
+
 /// The team id at an arena team index, or zero when the index is off the end.
 ///
 /// One-based, as the interface counts: ArenaTeamRoster(1) is the first team.

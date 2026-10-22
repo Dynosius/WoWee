@@ -4258,20 +4258,33 @@ static int lua_ShowMiniWorldMapArrowFrame(lua_State* L) { (void)L; return 0; }
 
 // ---- The stored combat log (Blizzard_CombatLog's refilter) ----
 //
-// The client keeps no history of combat events - they are handled as they
-// arrive - so there is nothing to walk back through and the log rebuilds itself
-// from new events only.
+// The history is the argument list of every COMBAT_LOG_EVENT_UNFILTERED the
+// client fired, kept by LuaEngine::fireEvent; see recordCombatLogEvent.
 //
-// CombatLogGetCurrentEntry answers nil rather than zero, and that distinction
-// is the whole of it. Blizzard_CombatLog_RefilterUpdate loops
+// CombatLogGetCurrentEntry answers nil rather than zero when there is no entry,
+// and that distinction matters. Blizzard_CombatLog_RefilterUpdate loops
 // `while (valid and total < COMBATLOG_LIMIT_PER_FRAME)`, and a zero is true in
 // Lua - it would add a line per iteration from an entry that does not exist,
 // stop only on the per-frame cap, and be re-armed by the OnUpdate that
 // scheduled it, every frame, for as long as the log was open.
-static int lua_CombatLogGetNumEntries(lua_State* L) { lua_pushnumber(L, 0); return 1; }
-static int lua_CombatLogGetCurrentEntry(lua_State* L) { (void)L; return luaReturnNil(L); }
-static int lua_CombatLogAdvanceEntry(lua_State* L) { (void)L; return luaReturnNil(L); }
-static int lua_CombatLogSetCurrentEntry(lua_State* L) { (void)L; return 0; }
+static int lua_CombatLogGetNumEntries(lua_State* L) {
+    lua_pushnumber(L, combatLogEntryCount());
+    return 1;
+}
+static int lua_CombatLogGetCurrentEntry(lua_State* L) {
+    const int pushed = pushCombatLogCurrent(L);
+    return pushed > 0 ? pushed : luaReturnNil(L);
+}
+static int lua_CombatLogAdvanceEntry(lua_State* L) {
+    const int count = static_cast<int>(luaL_optnumber(L, 1, 1));
+    if (!combatLogAdvanceCursor(count)) return luaReturnNil(L);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+static int lua_CombatLogSetCurrentEntry(lua_State* L) {
+    combatLogSetCursor(static_cast<int>(luaL_optnumber(L, 1, 0)));
+    return 0;
+}
 static int lua_CombatLogAddFilter(lua_State* L) { (void)L; return 0; }
 static int lua_CombatLogResetFilter(lua_State* L) { (void)L; return 0; }
 

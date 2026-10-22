@@ -1224,6 +1224,17 @@ target_link_libraries(test_combat_text_filter PRIVATE catch2_main)
 add_test(NAME combat_text_filter COMMAND test_combat_text_filter)
 register_test_target(test_combat_text_filter)
 
+# ── test_combat_log_event ────────────────────────────────────
+add_executable(test_combat_log_event
+    test_combat_log_event.cpp
+    ${TEST_COMMON_SOURCES}
+)
+target_include_directories(test_combat_log_event PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_combat_log_event SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_combat_log_event PRIVATE catch2_main)
+add_test(NAME combat_log_event COMMAND test_combat_log_event)
+register_test_target(test_combat_log_event)
+
 # ── test_combat_fsm ──────────────────────────────────────────
 add_executable(test_combat_fsm
     test_combat_fsm.cpp

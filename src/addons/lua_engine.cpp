@@ -15,6 +15,7 @@
 #include <ctime>
 #include <sstream>
 #include <algorithm>
+#include <deque>
 #include <iterator>
 #include <climits>
 #include <set>
@@ -8917,9 +8918,57 @@ void pushEventArg(lua_State* L, const std::string& arg) {
 }
 }  // namespace
 
+namespace {
+/// The history behind CombatLogGetCurrentEntry. Main thread only: events are
+/// fired and the log is read from the same one.
+constexpr size_t kCombatLogHistory = 1000;
+std::deque<std::vector<std::string>>& combatLogHistory() {
+    static std::deque<std::vector<std::string>> history;
+    return history;
+}
+int gCombatLogCursor = 0;   // age: 0 is the newest
+} // namespace
+
+void recordCombatLogEvent(const std::vector<std::string>& args) {
+    auto& history = combatLogHistory();
+    history.push_back(args);
+    if (history.size() > kCombatLogHistory) history.pop_front();
+}
+
+int combatLogEntryCount() { return static_cast<int>(combatLogHistory().size()); }
+
+void combatLogSetCursor(int age) {
+    const int last = std::max(combatLogEntryCount() - 1, 0);
+    gCombatLogCursor = std::clamp(age, 0, last);
+}
+
+bool combatLogAdvanceCursor(int count) {
+    const int size = combatLogEntryCount();
+    if (size == 0) return false;
+    // Blizzard's own walk advances by -1 to go toward the older entries.
+    const int target = gCombatLogCursor - count;
+    if (target < 0 || target >= size) {
+        gCombatLogCursor = std::clamp(target, 0, size - 1);
+        return false;
+    }
+    gCombatLogCursor = target;
+    return true;
+}
+
+int pushCombatLogCurrent(lua_State* L) {
+    const auto& history = combatLogHistory();
+    const int size = static_cast<int>(history.size());
+    if (gCombatLogCursor < 0 || gCombatLogCursor >= size) return 0;
+    const auto& args = history[static_cast<size_t>(size - 1 - gCombatLogCursor)];
+    for (const auto& arg : args) pushEventArg(L, arg);
+    return static_cast<int>(args.size());
+}
+
 void LuaEngine::fireEvent(const std::string& eventName,
                            const std::vector<std::string>& args) {
     if (!L_) return;
+
+    if (eventName == "COMBAT_LOG_EVENT_UNFILTERED") recordCombatLogEvent(args);
 
     // The trade skill list may change shape now, and only now. It is held still
     // between these events because the frame reads it many times to draw one
