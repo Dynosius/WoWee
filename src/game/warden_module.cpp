@@ -370,17 +370,20 @@ void WardenModule::setRsaModulus(std::vector<uint8_t> modulus) {
 }
 
 bool WardenModule::verifyRSASignature(const std::vector<uint8_t>& data) {
-    // RSA-2048 signature is last 256 bytes
-    if (data.size() < 256) {
-        LOG_ERROR("WardenModule: Data too small for RSA signature (need at least 256 bytes)");
+    // The module ends in [4 "NGIS"][256 signature]. The signature covers what
+    // comes before the tag, and both it and the modulus are little-endian, as
+    // they sit in the client binary.
+    if (data.size() < 260) {
+        LOG_ERROR("WardenModule: Data too small for RSA signature (need at least 260 bytes)");
         return false;
     }
 
-    // Extract signature (last 256 bytes)
-    std::vector<uint8_t> signature(data.end() - 256, data.end());
+    // Extract signature (last 256 bytes), reversed into the big-endian order
+    // OpenSSL reads
+    std::vector<uint8_t> signature(data.rbegin(), data.rbegin() + 256);
 
-    // Extract data without signature
-    std::vector<uint8_t> dataWithoutSig(data.begin(), data.end() - 256);
+    // Extract the signed data: everything before the "NGIS" tag
+    std::vector<uint8_t> dataWithoutSig(data.begin(), data.end() - 260);
 
     // Whose key this module should carry. A profile that names one gets it;
     // everything else gets Blizzard's.
@@ -398,7 +401,7 @@ bool WardenModule::verifyRSASignature(const std::vector<uint8_t>& data) {
     std::vector<uint8_t> expectedHash = auth::Crypto::sha1(dataToHash);
 
     // Create RSA public key using EVP_PKEY_fromdata (OpenSSL 3.0 compatible)
-    BIGNUM* n = BN_bin2bn(modulus, 256, nullptr);
+    BIGNUM* n = BN_lebin2bn(modulus, 256, nullptr);
     BIGNUM* e = BN_new();
     BN_set_word(e, exponent);
 
@@ -448,13 +451,10 @@ bool WardenModule::verifyRSASignature(const std::vector<uint8_t>& data) {
         return false;
     }
 
-    // Expected format: padding (0xBB bytes) + SHA1 hash (20 bytes)
-    // Total: 256 bytes decrypted
-    // Find SHA1 hash in decrypted signature (should be at end, preceded by 0xBB padding)
-
-    // Look for SHA1 hash in last 20 bytes
-    if (decryptedLen >= 20) {
-        std::vector<uint8_t> actualHash(decryptedSig.end() - 20, decryptedSig.end());
+    // Recovered block, little-endian: SHA1 hash (20 bytes) then 0xBB padding.
+    // Read big-endian, the hash is the last 20 bytes, reversed.
+    if (decryptedLen == 256) {
+        std::vector<uint8_t> actualHash(decryptedSig.rbegin(), decryptedSig.rbegin() + 20);
 
         if (std::memcmp(actualHash.data(), expectedHash.data(), 20) == 0) {
             LOG_INFO("WardenModule: RSA signature verified");
