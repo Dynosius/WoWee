@@ -1,10 +1,5 @@
 #pragma once
 
-#include <functional>
-
-// Forward declaration for ImGui (avoid pulling full imgui header)
-struct ImGuiContext;
-
 namespace wowee {
 namespace ui {
 
@@ -12,7 +7,8 @@ namespace ui {
  * Chat appearance and auto-join settings.
  *
  * Extracted from ChatPanel (Phase 1.1 of chat_panel_ref.md).
- * Pure data + settings UI; no dependency on GameHandler or network.
+ * Pure data, read and written through SettingsPanel; no dependency on
+ * GameHandler or network.
  */
 struct ChatSettings {
     // Appearance
@@ -43,12 +39,6 @@ struct ChatSettings {
     // height were written to the config every run and read back into fields
     // nobody asked. The comment on them described capturing a resize, which
     // nothing did.
-
-    /** Reset all chat settings to defaults. */
-    void restoreDefaults();
-
-    /** Render the "Chat" tab inside the Settings window. */
-    void renderSettingsTab(const std::function<void()>& saveSettingsFn);
 };
 
 } // namespace ui

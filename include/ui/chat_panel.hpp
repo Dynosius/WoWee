@@ -121,18 +121,6 @@ public:
     /** Spell icon lookup callback - set by GameScreen each frame before render(). */
     std::function<VkDescriptorSet(uint32_t, pipeline::AssetManager*)> getSpellIcon;
 
-    /** Persist-settings callback - set once by GameScreen so the in-window
-     *  quick menu can save appearance changes immediately. */
-    std::function<void()> saveSettingsFn;
-
-    /** Render the "Chat" tab inside the Settings window (delegates to settings). */
-    void renderSettingsTab(const std::function<void()>& saveSettingsFn) {
-        settings.renderSettingsTab(saveSettingsFn);
-    }
-
-    /** Reset all chat settings to defaults (delegates to settings). */
-    void restoreDefaults() { settings.restoreDefaults(); }
-
     // UIServices injection (Phase B singleton breaking)
     void setServices(const UIServices& services) { services_ = services; }
 
