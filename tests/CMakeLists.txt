@@ -495,6 +495,14 @@ target_link_libraries(test_warden_reloc PRIVATE catch2_main)
 add_test(NAME warden_reloc COMMAND test_warden_reloc)
 register_test_target(test_warden_reloc)
 
+# ── test_warden_cr_file ──────────────────────────────────────
+add_executable(test_warden_cr_file test_warden_cr_file.cpp)
+target_include_directories(test_warden_cr_file PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_warden_cr_file SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_warden_cr_file PRIVATE catch2_main)
+add_test(NAME warden_cr_file COMMAND test_warden_cr_file)
+register_test_target(test_warden_cr_file)
+
 # ── sweep_guard ──────────────────────────────────────────────────
 # The fast interface sweeps, run as a test so they stop depending on someone
 # remembering. Each fault they catch raises nothing, logs nothing and fails no

@@ -224,44 +224,14 @@ void WardenHandler::update(float deltaTime) {
 // ---------------------------------------------------------------------------
 
 bool WardenHandler::loadWardenCRFile(const std::string& moduleHashHex) {
-    wardenCREntries_.clear();
-
-    // Look for .cr file in warden cache
-    std::string cacheBase;
-#ifdef _WIN32
-    if (const char* h = std::getenv("APPDATA")) cacheBase = std::string(h) + "\\wowee\\warden_cache";
-    else cacheBase = ".\\warden_cache";
-#else
-    if (const char* h = std::getenv("HOME")) cacheBase = std::string(h) + "/.local/share/wowee/warden_cache";
-    else cacheBase = "./warden_cache";
-#endif
-    std::string crPath = cacheBase + "/" + moduleHashHex + ".cr";
-
-    std::ifstream crFile(crPath, std::ios::binary);
-    if (!crFile) {
-        LOG_WARNING("Warden: No .cr file at ", crPath,
+    const std::string crPath = wardenCRPath(moduleHashHex);
+    if (!readWardenCR(crPath, wardenCheckOpcodes_, wardenCREntries_)) {
+        LOG_WARNING("Warden: No usable .cr file at ", crPath,
                     " - hash requests go unanswered. Servers that tolerate that are unaffected; "
                     "otherwise turn Warden off on the server");
         return false;
     }
 
-    // Get file size
-    crFile.seekg(0, std::ios::end);
-    auto fileSize = crFile.tellg();
-    crFile.seekg(0, std::ios::beg);
-
-    // Header: [4 memoryRead][4 pageScanCheck][9 opcodes] = 17 bytes
-    constexpr size_t CR_HEADER_SIZE = 17;
-    constexpr size_t CR_ENTRY_SIZE = 68; // seed[16]+reply[20]+clientKey[16]+serverKey[16]
-
-    if (static_cast<size_t>(fileSize) < CR_HEADER_SIZE) {
-        LOG_ERROR("Warden: .cr file too small (", fileSize, " bytes)");
-        return false;
-    }
-
-    // Read header: [4 memoryRead][4 pageScanCheck][9 opcodes]
-    crFile.seekg(8); // skip memoryRead + pageScanCheck
-    crFile.read(reinterpret_cast<char*>(wardenCheckOpcodes_), 9);
     {
         std::string opcHex;
         // CMaNGOS WindowsScanType order:
@@ -275,22 +245,7 @@ bool WardenHandler::loadWardenCRFile(const std::string& moduleHashHex) {
         LOG_DEBUG("Warden: Check opcodes: ", opcHex);
     }
 
-    size_t entryCount = (static_cast<size_t>(fileSize) - CR_HEADER_SIZE) / CR_ENTRY_SIZE;
-    if (entryCount == 0) {
-        LOG_ERROR("Warden: .cr file has no entries");
-        return false;
-    }
-
-    wardenCREntries_.resize(entryCount);
-    for (size_t i = 0; i < entryCount; i++) {
-        auto& e = wardenCREntries_[i];
-        crFile.read(reinterpret_cast<char*>(e.seed), 16);
-        crFile.read(reinterpret_cast<char*>(e.reply), 20);
-        crFile.read(reinterpret_cast<char*>(e.clientKey), 16);
-        crFile.read(reinterpret_cast<char*>(e.serverKey), 16);
-    }
-
-    LOG_INFO("Warden: Loaded ", entryCount, " CR entries from ", crPath);
+    LOG_INFO("Warden: Loaded ", wardenCREntries_.size(), " CR entries from ", crPath);
     return true;
 }
 
@@ -426,16 +381,9 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
 
                 // Cache raw module to disk
                 {
-#ifdef _WIN32
-                    std::string cacheDir;
-                    if (const char* h = std::getenv("APPDATA")) cacheDir = std::string(h) + "\\wowee\\warden_cache";
-                    else cacheDir = ".\\warden_cache";
-#else
-                    std::string cacheDir;
-                    if (const char* h = std::getenv("HOME")) cacheDir = std::string(h) + "/.local/share/wowee/warden_cache";
-                    else cacheDir = "./warden_cache";
-#endif
-                    std::filesystem::create_directories(cacheDir);
+                    const std::string cacheDir = wardenCacheDir();
+                    std::error_code ec;
+                    std::filesystem::create_directories(cacheDir, ec);
 
                     std::string hashHex;
                     for (auto b : wardenModuleHash_) { char s[4]; snprintf(s, 4, "%02x", b); hashHex += s; }
@@ -511,7 +459,7 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
 
             // --- Try CR lookup (pre-computed challenge/response entries) ---
             if (!wardenCREntries_.empty()) {
-                const WardenCREntry* match = nullptr;
+                const WardenCRRecord* match = nullptr;
                 for (const auto& entry : wardenCREntries_) {
                     if (std::memcmp(entry.seed, seed.data(), 16) == 0) {
                         match = &entry;
@@ -538,8 +486,8 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
 
                     wardenState_ = WardenState::WAIT_CHECKS;
                     break;
-                }                     LOG_DEBUG("Warden: Seed not found in ", wardenCREntries_.size(), " CR entries");
-               
+                }
+                LOG_DEBUG("Warden: Seed not found in ", wardenCREntries_.size(), " CR entries");
             }
 
             // --- No CR match: decide strategy based on server strictness ---

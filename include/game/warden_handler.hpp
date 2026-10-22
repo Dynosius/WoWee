@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/opcode_table.hpp"
+#include "game/warden_cr_file.hpp"
 #include "network/packet.hpp"
 #include <cstdint>
 #include <functional>
@@ -80,13 +81,7 @@ private:
     std::shared_ptr<WardenModule> wardenLoadedModule_; // Loaded Warden module
 
     // Pre-computed challenge/response entries from .cr file
-    struct WardenCREntry {
-        uint8_t seed[16];
-        uint8_t reply[20];
-        uint8_t clientKey[16];  // Encrypt key (client→server)
-        uint8_t serverKey[16]; // Decrypt key (server→client)
-    };
-    std::vector<WardenCREntry> wardenCREntries_;
+    std::vector<WardenCRRecord> wardenCREntries_;
     // Module-specific check type opcodes [9]: MEM, PAGE_A, PAGE_B, MPQ, LUA, DRIVER, TIMING, PROC, MODULE
     uint8_t wardenCheckOpcodes_[9] = {};
 
