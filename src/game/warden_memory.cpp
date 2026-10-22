@@ -314,11 +314,21 @@ void WardenMemory::patchRuntimeGlobals() {
         return;
     }
 
+    // These build 5875 distance limits are initialized at runtime, so mapping
+    // the executable alone leaves both zero. vmangos warden_scans 90 and 91
+    // compare their initialized values (400.0f and 900.0f), respectively.
+    // Keep the addresses scoped to this build; other clients lay out data
+    // differently.
+    if (fileBuild_ == 5875) {
+        writeLE32(0x00C4D988, 0x43C80000); // nameplate distance limit
+        writeLE32(0x00860A80, 0x44610000); // follow distance limit
+    }
+
     // Classic 1.12.1 (build 5875) runtime globals
     // VMaNGOS has TWO types of Warden scans that read these addresses:
     //
     // 1. DB-driven scans (warden_scans table): memcmp against expected bytes.
-    //    These check CODE sections for integrity - never check runtime data addresses.
+    //    These check code integrity and some initialized runtime data values.
     //
     // 2. Scripted scans (WardenWin::LoadScriptedScans): READ and INTERPRET values.
     //    - "Warden locate" reads 0xCE897C as a pointer, follows chain to SYSTEM_INFO

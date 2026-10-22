@@ -532,6 +532,8 @@ register_test_target(test_warden_file_build)
 # AzerothCore's own check list put to the check responder and graded by its own
 # rules: a wrong answer is a ban on a live server, so it has to fail here first.
 # The memory checks need the build 12340 WoW.exe named in WOWEE_TEST_WOW_EXE.
+# Classic fixtures use WOWEE_TEST_CLASSIC_WOW_EXE (5875); TBC fixtures use
+# WOWEE_TEST_TBC_WOW_EXE (8606). Missing executables skip those cases.
 add_executable(test_warden_check_grader
     test_warden_check_grader.cpp
     ${TEST_COMMON_SOURCES}

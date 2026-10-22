@@ -528,10 +528,17 @@ the server then sends no checks, which most servers tolerate. See the
 
 ## Known limitations
 
-- Shadows cannot be turned off: doing so loses the GPU device, so the control is
-  held on until that is found.
-- Warden check answers are graded against AzerothCore's check list; those of
-  vmangos and CMaNGOS realms are not graded yet.
+- The restored shadows toggle still needs live GPU validation. Turning shadows
+  off disables sampling while retaining the shadow pass.
+- Warden checks are graded against AzerothCore's list and build 5875 memory
+  fixtures from CMaNGOS and vmangos. Set `WOWEE_TEST_CLASSIC_WOW_EXE` to a
+  1.12.1 executable and run `test_warden_check_grader '[classic]'`. The supplied
+  RetroWoW executable passes all 74 CMaNGOS checks and all 80 vmangos checks
+  with the build 5875 runtime defaults initialized. These fixtures do not cover scripted scans
+  or establish live realm compatibility.
+  TBC build 8606 has 61 CMaNGOS memory fixtures: set `WOWEE_TEST_TBC_WOW_EXE`
+  to a 2.4.3 executable and run `test_warden_check_grader '[tbc]'`. All 61 pass
+  against the supplied enGB repack. Executables are not included in the repository.
 - Where terrain meets a building, the character can occasionally take the wrong
   floor or stick. Enter `/unstuck` in chat to recover, press `F8` to write the
   floor data at your position to the log, and include the location and those

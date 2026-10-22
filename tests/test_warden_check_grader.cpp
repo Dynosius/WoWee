@@ -268,6 +268,11 @@ TEST_CASE("AzerothCore's code scans find nothing in a genuine 3.3.5a client", "[
     // that matched genuine code by mistake would answer 0x4A and fail.
     const char* exe = std::getenv("WOWEE_TEST_WOW_EXE");
     if (!exe || !std::filesystem::exists(exe)) SKIP("WOWEE_TEST_WOW_EXE does not name a WoW.exe");
+    {
+        std::ifstream f(exe, std::ios::binary);
+        const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        if (WardenMemory::fileBuildOf(bytes.data(), bytes.size()) != 12340) SKIP("WOWEE_TEST_WOW_EXE is not build 12340");
+    }
     WardenMemory memory;
     REQUIRE(memory.loadFromFile(exe));
 
@@ -311,4 +316,67 @@ TEST_CASE("the grader fails the answers that got an account banned", "[wardengra
     auto badSum = respond(clean);
     badSum[3] ^= 0xFF;
     CHECK_FALSE(grade(badSum, checks).empty());
+}
+
+TEST_CASE("CMaNGOS build 5875 memory checks match the supplied 1.12.1 executable", "[wardengrader][classic]") {
+    const char* exe = std::getenv("WOWEE_TEST_CLASSIC_WOW_EXE");
+    if (!exe || !std::filesystem::exists(exe)) SKIP("WOWEE_TEST_CLASSIC_WOW_EXE does not name a WoW.exe");
+    std::ifstream f(exe, std::ios::binary);
+    const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    REQUIRE(WardenMemory::fileBuildOf(bytes.data(), bytes.size()) == 5875);
+    WardenMemory memory;
+    REQUIRE(memory.loadFromFile(exe));
+    const AcCheck classicChecks[] = {
+#include "warden_cmangos_5875_checks.inc"
+    };
+    std::vector<const AcCheck*> checks;
+    for (const auto& c : classicChecks) checks.push_back(&c);
+    REQUIRE(checks.size() > 20);
+    for (uint8_t key : {uint8_t{0}, uint8_t{0x5C}, uint8_t{0xF3}}) {
+        const auto failures = run(checks, &memory, key);
+        for (const auto& failure : failures) UNSCOPED_INFO(failure);
+        CHECK(failures.empty());
+    }
+}
+
+TEST_CASE("vmangos build 5875 memory checks match the supplied 1.12.1 executable", "[wardengrader][classic]") {
+    const char* exe = std::getenv("WOWEE_TEST_CLASSIC_WOW_EXE");
+    if (!exe || !std::filesystem::exists(exe)) SKIP("WOWEE_TEST_CLASSIC_WOW_EXE does not name a WoW.exe");
+    std::ifstream f(exe, std::ios::binary);
+    const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    REQUIRE(WardenMemory::fileBuildOf(bytes.data(), bytes.size()) == 5875);
+    WardenMemory memory;
+    REQUIRE(memory.loadFromFile(exe));
+    const AcCheck classicChecks[] = {
+#include "warden_vmangos_5875_checks.inc"
+    };
+    std::vector<const AcCheck*> checks;
+    for (const auto& c : classicChecks) checks.push_back(&c);
+    REQUIRE(checks.size() > 20);
+    for (uint8_t key : {uint8_t{0}, uint8_t{0x5C}, uint8_t{0xF3}}) {
+        const auto failures = run(checks, &memory, key);
+        for (const auto& failure : failures) UNSCOPED_INFO(failure);
+        CHECK(failures.empty());
+    }
+}
+
+TEST_CASE("CMaNGOS build 8606 memory checks match the supplied 2.4.3 executable", "[wardengrader][tbc]") {
+    const char* exe = std::getenv("WOWEE_TEST_TBC_WOW_EXE");
+    if (!exe || !std::filesystem::exists(exe)) SKIP("WOWEE_TEST_TBC_WOW_EXE does not name a WoW.exe");
+    std::ifstream f(exe, std::ios::binary);
+    const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    REQUIRE(WardenMemory::fileBuildOf(bytes.data(), bytes.size()) == 8606);
+    WardenMemory memory;
+    REQUIRE(memory.loadFromFile(exe));
+    const AcCheck tbcChecks[] = {
+#include "warden_cmangos_8606_checks.inc"
+    };
+    std::vector<const AcCheck*> checks;
+    for (const auto& c : tbcChecks) checks.push_back(&c);
+    REQUIRE(checks.size() > 20);
+    for (uint8_t key : {uint8_t{0}, uint8_t{0x5C}, uint8_t{0xF3}}) {
+        const auto failures = run(checks, &memory, key);
+        for (const auto& failure : failures) UNSCOPED_INFO(failure);
+        CHECK(failures.empty());
+    }
 }
