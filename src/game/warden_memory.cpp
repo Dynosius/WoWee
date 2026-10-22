@@ -328,6 +328,13 @@ void WardenMemory::patchRuntimeGlobals() {
     // raw PE data causes the Anti-AFK scan to see lastHardwareAction > currentTime
     // (PE bytes happen to be a large value), triggering a kick after ~3.5 minutes.
 
+    // 3.3.5a: the login state, 4 once the client is in the world and 0xFFFFFFFF
+    // in the file. AzerothCore reads it (warden_checks 437, "Login State").
+    if (fileBuild_ == 12340) {
+        writeLE32(0x00AC3DAC, 4);
+        LOG_WARNING("WardenMemory: Patched 3.3.5a login state @0xac3dac");
+    }
+
     // === Runtime global patches (applied unconditionally for all image variants) ===
 
     // Warden SYSTEM_INFO chain
@@ -639,57 +646,66 @@ uint16_t fileBuildOfPath(const std::string& path) {
 }
 }  // namespace
 
-std::string WardenMemory::findWowExe(uint16_t build) const {
-    std::vector<std::string> candidateDirs;
+std::string WardenMemory::findWowExe(uint16_t build, const std::string& expansionId) const {
+    // Each expansion's executable lives in its own data folder,
+    // Data/expansions/<id>/misc, so one install can hold all of them. The
+    // active expansion's folder is looked in first: classic and Turtle are
+    // both build 5875, and only the folder says which server it is for.
+    std::vector<std::string> ownDirs;
+    std::vector<std::string> otherDirs;
     if (const char* env = std::getenv("WOWEE_INTEGRITY_DIR")) {
-        if (env && *env) candidateDirs.emplace_back(env);
+        if (env && *env) ownDirs.emplace_back(env);
     }
-    if (const char* home = std::getenv("HOME")) {
-        if (home && *home) {
-            candidateDirs.push_back(std::string(home) + "/Downloads");
-            candidateDirs.push_back(std::string(home) + "/Downloads/twmoa_1180");
-            candidateDirs.push_back(std::string(home) + "/twmoa_1180");
-        }
-    }
+    static const char* const kExpansionIds[] = {"classic", "turtle", "tbc", "wotlk"};
     // Under the data folder being read as well as Data/ beside the client: an
     // extraction made by the asset builder is in the per-user folder, and
     // looking beside the client alone never found its executable.
     for (const std::string& root : core::extractionRoots()) {
-        candidateDirs.push_back(root + "/expansions/turtle/misc");
-        candidateDirs.push_back(root + "/expansions/classic/misc");
-        candidateDirs.push_back(root + "/expansions/tbc/misc");
-        candidateDirs.push_back(root + "/expansions/wotlk/misc");
-        candidateDirs.push_back(root + "/misc");
-        candidateDirs.push_back(root + "/expansions/turtle/overlay/misc");
+        if (!expansionId.empty()) {
+            ownDirs.push_back(root + "/expansions/" + expansionId + "/misc");
+            if (expansionId == "turtle") ownDirs.push_back(root + "/expansions/turtle/overlay/misc");
+        }
+    }
+    if (const char* home = std::getenv("HOME")) {
+        if (home && *home) {
+            otherDirs.push_back(std::string(home) + "/Downloads");
+            otherDirs.push_back(std::string(home) + "/Downloads/twmoa_1180");
+            otherDirs.push_back(std::string(home) + "/twmoa_1180");
+        }
+    }
+    for (const std::string& root : core::extractionRoots()) {
+        for (const char* id : kExpansionIds) {
+            if (expansionId != id) otherDirs.push_back(root + "/expansions/" + id + "/misc");
+        }
+        otherDirs.push_back(root + "/misc");
+        if (expansionId != "turtle") otherDirs.push_back(root + "/expansions/turtle/overlay/misc");
     }
 
     const char* candidateExes[] = { "WoW.exe", "TurtleWoW.exe", "Wow.exe", "wow.exe" };
 
-    // Collect all candidate paths
+    // Collect all candidate paths, the active expansion's first
     std::vector<std::string> allPaths;
-    for (const auto& dir : candidateDirs) {
-        for (const char* exe : candidateExes) {
-            std::string path = dir;
-            if (!path.empty() && path.back() != '/') path += '/';
-            path += exe;
-            path = core::resolveFileIgnoreCase(path);
-            if (std::filesystem::exists(path)) {
-                // A case-insensitive volume answers every spelling with the
-                // same file, so the same one is not listed four times.
-                if (std::find(allPaths.begin(), allPaths.end(), path) == allPaths.end()) {
-                    allPaths.push_back(path);
+    size_t ownCount = 0;
+    auto collect = [&](const std::vector<std::string>& dirs) {
+        for (const auto& dir : dirs) {
+            for (const char* exe : candidateExes) {
+                std::string path = dir;
+                if (!path.empty() && path.back() != '/') path += '/';
+                path += exe;
+                path = core::resolveFileIgnoreCase(path);
+                if (std::filesystem::exists(path)) {
+                    // A case-insensitive volume answers every spelling with the
+                    // same file, so the same one is not listed four times.
+                    if (std::find(allPaths.begin(), allPaths.end(), path) == allPaths.end()) {
+                        allPaths.push_back(path);
+                    }
                 }
             }
         }
-    }
-
-    // An executable that says it is this build is the one the server's
-    // checks were written against.
-    if (build != 0) {
-        for (const auto& path : allPaths) {
-            if (fileBuildOfPath(path) == build) return path;
-        }
-    }
+    };
+    collect(ownDirs);
+    ownCount = allPaths.size();
+    collect(otherDirs);
 
     // If we know the expected imageSize for this build, try to find a matching PE
     uint32_t expectedSize = expectedImageSizeForBuild(build, isTurtle_);
@@ -716,6 +732,17 @@ std::string WardenMemory::findWowExe(uint16_t build) const {
         }
     }
 
+    // An executable that says it is this build is the one the server's
+    // checks were written against.
+    if (build != 0) {
+        for (const auto& path : allPaths) {
+            if (fileBuildOfPath(path) == build) return path;
+        }
+    }
+
+    // One in the active expansion's own folder, whatever it says it is.
+    if (ownCount > 0) return allPaths.front();
+
     // Fallback: prefer the largest PE file (modified clients like Turtle WoW are
     // larger than vanilla, and Warden checks target the actual running client).
     std::string bestPath;
@@ -731,9 +758,9 @@ std::string WardenMemory::findWowExe(uint16_t build) const {
     return bestPath.empty() && !allPaths.empty() ? allPaths[0] : bestPath;
 }
 
-bool WardenMemory::load(uint16_t build, bool isTurtle) {
+bool WardenMemory::load(uint16_t build, bool isTurtle, const std::string& expansionId) {
     isTurtle_ = isTurtle;
-    std::string path = findWowExe(build);
+    std::string path = findWowExe(build, expansionId.empty() && isTurtle ? std::string("turtle") : expansionId);
     if (path.empty()) {
         LOG_WARNING("WardenMemory: WoW.exe not found in any candidate directory");
         return false;
@@ -746,7 +773,8 @@ bool WardenMemory::load(uint16_t build, bool isTurtle) {
         LOG_WARNING("WardenMemory: ", path, " is build ", fileBuild, ", not ", build,
                     " - memory checks will answer with the wrong bytes, and a realm that "
                     "checks them disconnects. Put the build ", build, " WoW.exe in "
-                    "Data/expansions/<id>/misc or $WOWEE_INTEGRITY_DIR");
+                    "Data/expansions/", expansionId.empty() ? "<id>" : expansionId,
+                    "/misc or $WOWEE_INTEGRITY_DIR");
     }
     return loadFromFile(path);
 }
@@ -765,6 +793,7 @@ bool WardenMemory::loadFromFile(const std::string& exePath) {
     std::vector<uint8_t> fileData(static_cast<size_t>(fileSize));
     f.read(reinterpret_cast<char*>(fileData.data()), fileSize);
 
+    fileBuild_ = fileBuildOf(fileData.data(), fileData.size());
     if (!parsePE(fileData)) {
         LOG_ERROR("WardenMemory: Failed to parse PE from ", exePath);
         return false;
