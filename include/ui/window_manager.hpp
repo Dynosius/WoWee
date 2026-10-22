@@ -45,15 +45,11 @@ public:
     /// FrameXML's help frame when that element is handed over.
     void renderInstanceLockouts(game::GameHandler& gameHandler);
     void renderEquipSetWindow(game::GameHandler& gameHandler);
-    void renderSkillsWindow(game::GameHandler& gameHandler);
 
     // ---- State owned by this manager ----
 
     // Instance lockouts
     bool showInstanceLockouts_ = false;
-
-    // Skills / Professions
-    bool showSkillsWindow_ = false;
 
     // Titles
 

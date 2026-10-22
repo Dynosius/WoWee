@@ -700,7 +700,6 @@ void GameScreen::render(game::GameHandler& gameHandler) {
     // windows drawing beside FrameXML's tabs.
     windowManager_.renderInstanceLockouts(gameHandler);
     combatUI_.renderCombatLog(gameHandler, spellbookScreen);
-    windowManager_.renderSkillsWindow(gameHandler);
     windowManager_.renderEquipSetWindow(gameHandler);
     combatUI_.renderThreatWindow(gameHandler);
     // The blips, whoever draws the ring around them.
@@ -1611,11 +1610,7 @@ void GameScreen::processTargetInput(game::GameHandler& gameHandler) {
             if (KeybindingManager::getInstance().isActionPressed(KeybindingManager::Action::TOGGLE_SKILLS)) {
                 // The skills list is a tab of the character sheet in FrameXML
                 // rather than a window of its own.
-                if (frameXmlOwns(UiElement::CharacterFrame)) {
-                    gameHandler.runInterfaceCommand("ToggleCharacter(\"SkillFrame\")");
-                } else {
-                    windowManager_.showSkillsWindow_ = !windowManager_.showSkillsWindow_;
-                }
+                gameHandler.runInterfaceCommand("ToggleCharacter(\"SkillFrame\")");
             }
 
             // H, which in WoW is TOGGLECHARACTER4: the Player vs Player panel,
