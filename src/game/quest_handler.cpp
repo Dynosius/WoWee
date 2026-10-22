@@ -74,8 +74,6 @@ void QuestHandler::reconcileItemObjectivesFromInventory(
                 // the objective properly.
                 owner_.queryItemInfo(obj.itemId, 0);
             }
-            if (owner_.questProgressCallbackRef())
-                owner_.questProgressCallbackRef()(quest.title, itemLabel, newCount, obj.required);
         }
     }
 
@@ -826,9 +824,6 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                     owner_.addUIInfoMessage(
                         questObjectiveLine(creatureName, isObject, count, reqCount));
 
-                    if (owner_.questProgressCallbackRef()) {
-                        owner_.questProgressCallbackRef()(quest.title, creatureName, count, reqCount);
-                    }
                     if (owner_.addonEventCallbackRef()) {
                         // The log INDEX, not the quest id. QuestLog_OnEvent
                         // hands arg1 straight to GetNumQuestLeaderBoards and
@@ -918,24 +913,6 @@ void QuestHandler::registerOpcodes(DispatchTable& table) {
                 }
             }
             owner_.addSystemChatMessage("Quest item: " + buildItemLink(itemId, questItemQuality, itemLabel) + " (" + std::to_string(count) + ")");
-
-            if (owner_.questProgressCallbackRef() && updatedAny) {
-                for (const auto& quest : questLog_) {
-                    if (quest.complete) continue;
-                    if (quest.itemCounts.count(itemId) == 0) continue;
-                    uint32_t required = 0;
-                    auto rIt = quest.requiredItemCounts.find(itemId);
-                    if (rIt != quest.requiredItemCounts.end()) required = rIt->second;
-                    if (required == 0) {
-                        for (const auto& obj : quest.itemObjectives) {
-                            if (obj.itemId == itemId) { required = obj.required; break; }
-                        }
-                    }
-                    if (required == 0) required = count;
-                    owner_.questProgressCallbackRef()(quest.title, itemLabel, count, required);
-                    break;
-                }
-            }
 
             if (owner_.addonEventCallbackRef() && updatedAny) {
                 // Once per quest this item counts towards, each named by its

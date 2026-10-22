@@ -2655,11 +2655,6 @@ public:
     void setAreaDiscoveryCallback(AreaDiscoveryCallback cb) { areaDiscoveryCallback_ = std::move(cb); }
 
     // Quest objective progress callback - fires on SMSG_QUESTUPDATE_ADD_KILL / ADD_ITEM
-    // questTitle: name of the quest; objectiveName: creature/item name; current/required counts
-    using QuestProgressCallback = std::function<void(const std::string& questTitle,
-                                                     const std::string& objectiveName,
-                                                     uint32_t current, uint32_t required)>;
-    void setQuestProgressCallback(QuestProgressCallback cb) { questProgressCallback_ = std::move(cb); }
     const std::unordered_map<uint32_t, uint64_t>& getCriteriaProgress() const { return criteriaProgress_; }
     /// Returns the WoW PackedTime earn date for an achievement, or 0 if unknown.
     uint32_t getAchievementDate(uint32_t id) const {
@@ -2962,18 +2957,6 @@ public:
     // Play the player character's spoken error response ("Not enough mana", ...)
     // using the active character's race/gender. Gated by the Character Speech setting.
     void playErrorSpeech(audio::PlayerErrorSpeech type);
-
-    // Reputation change toast: factionName, delta, new standing
-    using RepChangeCallback = std::function<void(const std::string& factionName, int32_t delta, int32_t standing)>;
-    void setRepChangeCallback(RepChangeCallback cb) { repChangeCallback_ = std::move(cb); }
-
-    // PvP honor credit callback (honorable kill or BG reward)
-    using PvpHonorCallback = std::function<void(uint32_t honorAmount, uint64_t victimGuid, uint32_t victimRank)>;
-    void setPvpHonorCallback(PvpHonorCallback cb) { pvpHonorCallback_ = std::move(cb); }
-
-    // Item looted / received callback (SMSG_ITEM_PUSH_RESULT when showInChat is set)
-    using ItemLootCallback = std::function<void(uint32_t itemId, uint32_t count, uint32_t quality, const std::string& name)>;
-    void setItemLootCallback(ItemLootCallback cb) { itemLootCallback_ = std::move(cb); }
 
     // Loot window open/close callback (for loot kneel animation)
     using LootWindowCallback = std::function<void(bool open)>;
@@ -3801,7 +3784,6 @@ public:
     auto& ghostStateCallbackRef() { return ghostStateCallback_; }
     auto& hearthstonePreloadCallbackRef() { return hearthstonePreloadCallback_; }
     auto& hitReactionCallbackRef() { return hitReactionCallback_; }
-    auto& itemLootCallbackRef() { return itemLootCallback_; }
     auto& knockBackCallbackRef() { return knockBackCallback_; }
     auto& lootWindowCallbackRef() { return lootWindowCallback_; }
     auto& meleeSwingCallbackRef() { return meleeSwingCallback_; }
@@ -3827,10 +3809,7 @@ public:
     auto& playerEquipmentCallbackRef() { return playerEquipmentCallback_; }
     auto& playerHealthCallbackRef() { return playerHealthCallback_; }
     auto& playerSpawnCallbackRef() { return playerSpawnCallback_; }
-    auto& pvpHonorCallbackRef() { return pvpHonorCallback_; }
     auto& questCompleteCallbackRef() { return questCompleteCallback_; }
-    auto& questProgressCallbackRef() { return questProgressCallback_; }
-    auto& repChangeCallbackRef() { return repChangeCallback_; }
     auto& spellCastAnimCallbackRef() { return spellCastAnimCallback_; }
     auto& spellCastFailedCallbackRef() { return spellCastFailedCallback_; }
     auto& sprintAuraCallbackRef() { return sprintAuraCallback_; }
@@ -5063,7 +5042,6 @@ private:
     OtherPlayerMountCallback otherPlayerMountCallback_;
     AchievementEarnedCallback achievementEarnedCallback_;
     AreaDiscoveryCallback areaDiscoveryCallback_;
-    QuestProgressCallback questProgressCallback_;
     MountCallback mountCallback_;
     TaxiPrecacheCallback taxiPrecacheCallback_;
     TaxiOrientationCallback taxiOrientationCallback_;
@@ -5141,15 +5119,7 @@ private:
     // ---- UI error frame callback ----
     UIErrorCallback uiErrorCallback_;
 
-    // ---- Reputation change callback ----
-    RepChangeCallback repChangeCallback_;
     uint32_t watchedFactionId_ = 0; // auto-set to most recently changed faction
-
-    // ---- PvP honor credit callback ----
-    PvpHonorCallback pvpHonorCallback_;
-
-    // ---- Item loot callback ----
-    ItemLootCallback itemLootCallback_;
 
     // ---- Loot window callback ----
     LootWindowCallback lootWindowCallback_;

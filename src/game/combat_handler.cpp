@@ -1013,7 +1013,6 @@ void CombatHandler::handlePvpCredit(network::Packet& packet) {
         std::string msg = "You gain " + std::to_string(honor) + " honor points.";
         owner_.addLocalChatLine(ChatType::COMBAT_HONOR_GAIN, msg);
         if (honor > 0) addCombatText(CombatTextEntry::HONOR_GAIN, static_cast<int32_t>(honor), 0, true);
-        if (owner_.pvpHonorCallbackRef()) owner_.pvpHonorCallbackRef()(honor, victimGuid, rank);
     }
 }
 

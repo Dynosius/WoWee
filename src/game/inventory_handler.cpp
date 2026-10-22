@@ -497,8 +497,6 @@ void InventoryHandler::registerOpcodes(DispatchTable& table) {
                     {std::to_string(bagButtonId),
                      owner_.getItemIconPath(info->displayInfoId)});
         }
-        if (owner_.itemLootCallbackRef())
-            owner_.itemLootCallbackRef()(itemId, count, quality, itemName);
     };
 
     // ---- Open container ----
@@ -4587,7 +4585,6 @@ void InventoryHandler::handleItemQueryResponse(network::Packet& packet) {
                 if (auto* ac = owner_.services().audioCoordinator) {
                     if (auto* sfx = ac->getUiSoundManager()) sfx->playLootItem();
                 }
-                if (owner_.itemLootCallbackRef()) owner_.itemLootCallbackRef()(data.entry, it->count, data.quality, itemName);
                 // ...and the event, which this path had never fired. An item
                 // whose name was not cached when it arrived is exactly the
                 // first one of its kind the player picks up, so the interface
