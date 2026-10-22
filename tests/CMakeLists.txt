@@ -528,6 +528,23 @@ target_link_libraries(test_warden_file_build PRIVATE catch2_main OpenSSL::Crypto
 add_test(NAME warden_file_build COMMAND test_warden_file_build)
 register_test_target(test_warden_file_build)
 
+# ── test_warden_check_grader ─────────────────────────────────
+# AzerothCore's own check list put to the check responder and graded by its own
+# rules: a wrong answer is a ban on a live server, so it has to fail here first.
+# The memory checks need the build 12340 WoW.exe named in WOWEE_TEST_WOW_EXE.
+add_executable(test_warden_check_grader
+    test_warden_check_grader.cpp
+    ${TEST_COMMON_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/game/warden_check_responder.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/warden_memory.cpp
+    ${CMAKE_SOURCE_DIR}/src/auth/crypto.cpp
+)
+target_include_directories(test_warden_check_grader PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_warden_check_grader SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_warden_check_grader PRIVATE catch2_main OpenSSL::SSL OpenSSL::Crypto)
+add_test(NAME warden_check_grader COMMAND test_warden_check_grader)
+register_test_target(test_warden_check_grader)
+
 # ── sweep_guard ──────────────────────────────────────────────────
 # The fast interface sweeps, run as a test so they stop depending on someone
 # remembering. Each fault they catch raises nothing, logs nothing and fails no
