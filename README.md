@@ -1,4 +1,4 @@
-# WoWee - World of Warcraft Engine Experiment
+# WoWee
 
 <p align="center">
   <img src="assets/Wowee.png" alt="WoWee logo" width="240" />
@@ -13,9 +13,13 @@
   <a href="https://discord.gg/PSdMPS8uje"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Join the WoWee Discord" /></a>
 </p>
 
-WoWee supports **Vanilla 1.12**, **TBC 2.4.3**, and **WotLK 3.3.5a** through
-expansion-specific profiles and packet parsers. It has been tested with
-AzerothCore/ChromieCraft, TrinityCore, MaNGOS, and Turtle WoW 1.18.
+WoWee is a complete replacement for the World of Warcraft client: a native C++
+program with its own Vulkan renderer, networking and audio, that logs into
+**Vanilla 1.12**, **TBC 2.4.3**, **WotLK 3.3.5a** and **Turtle WoW 1.18** servers
+and plays the game from your own game data. It runs Blizzard's own interface and
+your addons, and it answers the servers' anti-cheat. It is played on
+AzerothCore/ChromieCraft, TrinityCore, CMaNGOS/vmangos and Turtle WoW, on Linux,
+macOS, Windows and Android.
 
 [Watch the latest demonstration](https://youtu.be/1Ax1jeNV_GU) ·
 [Download the latest release](https://github.com/Kelsidavis/WoWee/releases/latest) ·
@@ -43,37 +47,55 @@ AzerothCore/ChromieCraft, TrinityCore, MaNGOS, and Turtle WoW 1.18.
 
 ## What works
 
-- Vulkan 1.3 terrain, WMO, M2, water/lava, particles, lighting, shadows,
-  weather, and asynchronous world streaming
-- SRP6 authentication, RC4 header encryption, and protocol handling for all
-  three supported expansions
-- Character creation and selection, movement, transports, combat, spells,
-  talents, inventory, banks, vendors, trainers, quests, loot, mail, auction
-  house, gossip, chat, parties, pets, maps, and taxi travel
-- Blizzard's own FrameXML interface, loaded from your game data and drawn by
-  the client; addons in the game's `Interface\AddOns` folder load too
-- An asset builder, inside the client and as the standalone `wowee_assets`
-  window, that extracts your own game installation
-- Keyboard and mouse, or a game controller with Xbox, PlayStation, Nintendo
-  and Steam Deck button names
-- Zone and city music, tavern and weather ambience, footsteps, mounts, combat,
-  spell and NPC voice audio
-- Optional Warden module execution through Unicorn Engine x86 emulation
-- Linux, macOS and Windows on x86-64 and ARM64, and **Android on arm64** with
-  on-screen controls
+**The game.** Character creation and selection, movement and swimming, flying
+and mounts, combat, spells and auras, talents, pets, quests and their map
+objectives, loot and roll windows, inventory, bags, the bank, vendors, trainers,
+the auction house, mail, trade, gossip, chat and channels, parties and raids,
+guilds, the Dungeon Finder, reputation, equipment sets, achievements, the world
+and flight maps, taxis, boats, zeppelins and lifts, and instances. Each
+expansion is spoken in its own wire format, from expansion profiles and packet
+parsers.
 
-This is an active work in progress, not a drop-in replacement for the official
-client. See [Known limitations](#known-limitations) before reporting a bug.
+**The interface.** Blizzard's FrameXML, loaded from your game data and drawn by
+the client: the same frames, Lua and events the original client runs, with a
+Lua API wide enough for the stock interface of every expansion. Addons in the
+game's `Interface\AddOns` folder load as they would there. Key bindings are the
+game's own panel, with two keys per command, and the client's settings sit in
+the game's Video, Sound and Interface panels.
+
+**The world.** A Vulkan 1.3 renderer for terrain, buildings, models and
+characters, water, lava and slime, particles and spell effects, shadows,
+weather, the day and night sky, volumetric fog and sun shafts, GPU grass, and
+asynchronous world streaming. FSR 1 and FSR 3 upscaling are built in.
+
+**The sound.** Zone and city music, tavern and weather ambience, footsteps,
+mounts, combat, spell, interface and NPC voice audio, from your game data, and
+[a soundtrack of its own](#soundtrack).
+
+**Logging in.** SRP6 authentication, the realm list and header encryption for
+every expansion, the login hashes servers check, and Warden: the module the
+server sends is verified and run under x86 emulation, and its checks are
+answered as a genuine client answers them. The answers are graded against
+AzerothCore's own check list in the test suite.
+
+**Your game data.** An asset builder, in the client and as the standalone
+`wowee_assets` window, extracts your own installation - several games into one
+folder if you like - and can borrow upgraded art from a later client you own.
+
+**Input.** Keyboard and mouse, mouse buttons 4 and 5, or a game controller on
+every platform, with buttons named as the pad in hand names them (Xbox,
+PlayStation, Nintendo, Steam Deck) and its back paddles on action slots.
+
+**Platforms.** Linux, macOS and Windows on x86-64 and ARM64, and Android on
+arm64 with on-screen controls.
 
 ### Experimental components
 
-The world editor and AMD FSR3 frame generation are early developer features.
-Their interfaces, formats, runtime requirements, and behavior may change. Frame
+The world editor, ray traced lighting and AMD FSR3 frame generation are early
+developer features; their interfaces, formats and behavior may change. Frame
 generation is only built when `WOWEE_ENABLE_AMD_FSR3_FRAMEGEN` is turned on
-with AMD's SDK under `extern/`. FSR 1 and FSR 3 upscaling are built in, but
-graphics acceleration features are still under active development and should
-not be treated as release-critical functionality. Grass is marked experimental
-in the settings.
+with AMD's SDK under `extern/`. Cataclysm 4.3.4 support is in progress: its
+movement packets are done, and the client does not reach its world yet.
 
 ## Quick start
 
@@ -493,25 +515,37 @@ The codebase is split into focused rendering, networking, gameplay, asset, UI,
 audio, and editor modules. Start with the [architecture guide](docs/architecture.md)
 before making broad changes.
 
+## Warden
+
+Servers that run Warden read memory from the client's executable. The asset
+builder caches each expansion's `WoW.exe` with its game data, in
+`Data/expansions/<id>/misc`, and the client reads the one for the server being
+played. Extract from the same client you would otherwise play with: an
+executable of another build answers every memory check wrongly, which servers
+treat as a modified client, and the client says so in its log.
+
+A realm that signs its own Warden module needs its key set as
+`wardenRsaModulus` in the expansion's `expansion.json`. To log in without
+answering Warden at all, start the client with `WOWEE_WARDEN_ANSWER_HASH=0`:
+the server then sends no checks, which most servers tolerate. See the
+[Warden reference](docs/WARDEN_QUICK_REFERENCE.md).
+
 ## Known limitations
 
-- Warden modules are checked against Blizzard's signing key. A realm that
-  signs its own module needs that key set as `wardenRsaModulus` in the
-  expansion's `expansion.json`.
-- Shadows are held on: switching them off loses the GPU device, so the control
-  is gone until that is fixed.
-- Terrain/WMO transitions are a longstanding regression area. Character floor
-  selection can occasionally prefer the wrong surface or leave the character
-  stuck. Enter `/unstuck` in chat to recover, press `F8` to write the floor data
-  at your position to the log, then include the location and relevant log lines
-  in a bug report.
-- Long rotational Northrend transport paths can occasionally show spline-wrap
-  glitches.
-- World-map zone hover has edge cases near continent boundaries.
-- Pet-bar protocol behavior may require adjustment for non-AzerothCore forks.
+- Shadows cannot be turned off: doing so loses the GPU device, so the control is
+  held on until that is found.
+- Warden check answers are graded against AzerothCore's check list; those of
+  vmangos and CMaNGOS realms are not graded yet. A Warden code scan takes about
+  ten seconds and is answered off the main thread, so a round of checks is
+  answered within a minute or two.
+- Where terrain meets a building, the character can occasionally take the wrong
+  floor or stick. Enter `/unstuck` in chat to recover, press `F8` to write the
+  floor data at your position to the log, and include the location and those
+  log lines in a bug report.
 - On Android the session drops a few seconds after the app goes to the
-  background, because the system closes the socket without a foreground service.
-  The client returns to the login screen as it does on any disconnect.
+  background, because the system closes the socket of an app without a
+  foreground service. The client returns to the login screen as it does on any
+  disconnect.
 - On Android the FrameXML interface is drawn at native size and reads small. The
   client's own panels scale with display density, and **Window scale** under
   Interface → WoWee → Interface reaches 3x.
