@@ -503,6 +503,19 @@ target_link_libraries(test_warden_cr_file PRIVATE catch2_main OpenSSL::Crypto)
 add_test(NAME warden_cr_file COMMAND test_warden_cr_file)
 register_test_target(test_warden_cr_file)
 
+# ── test_warden_crypto ───────────────────────────────────────
+add_executable(test_warden_crypto
+    test_warden_crypto.cpp
+    ${TEST_COMMON_SOURCES}
+    ${CMAKE_SOURCE_DIR}/src/game/warden_crypto.cpp
+    ${CMAKE_SOURCE_DIR}/src/auth/crypto.cpp
+)
+target_include_directories(test_warden_crypto PRIVATE ${TEST_INCLUDE_DIRS})
+target_include_directories(test_warden_crypto SYSTEM PRIVATE ${TEST_SYSTEM_INCLUDE_DIRS})
+target_link_libraries(test_warden_crypto PRIVATE catch2_main OpenSSL::SSL OpenSSL::Crypto)
+add_test(NAME warden_crypto COMMAND test_warden_crypto)
+register_test_target(test_warden_crypto)
+
 # ── sweep_guard ──────────────────────────────────────────────────
 # The fast interface sweeps, run as a test so they stop depending on someone
 # remembering. Each fault they catch raises nothing, logs nothing and fails no

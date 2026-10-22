@@ -13,7 +13,8 @@ Warden modules are native x86 Windows DLLs that the server encrypts and delivers
 2. Client verifies and decrypts: MD5 → RC4 → RSA-2048 signature verify → zlib decompress
 3. Unpacks the module image: relocations applied, imports resolved (Windows API hooks)
 4. Executes entry point via Unicorn Engine x86 emulator
-5. Client responds with check results via `CMSG_WARDEN_DATA` (0x2E7), built by `WardenHandler` from a `WoW.exe` image and pre-computed `.cr` files
+5. `HASH_REQUEST` is answered from a `.cr` file, the built-in table for the TrinityCore/AzerothCore 3.3.5a module, or the module's own handler run in the emulator
+6. Client responds with check results via `CMSG_WARDEN_DATA` (0x2E7), built by `WardenHandler` from a `WoW.exe` image
 
 A signature mismatch does not stop the load. A realm that signs its own module can name its
 key as `wardenRsaModulus` in the expansion profile.
@@ -28,7 +29,7 @@ key as `wardenRsaModulus` in the expansion profile.
 | AzerothCore (local) | Works |
 | ChromieCraft | Works |
 | Warmane | Should work |
-| Turtle WoW-derived | Needs a `.cr` file for the module; without one `HASH_REQUEST` goes unanswered |
+| Turtle WoW-derived | `HASH_REQUEST` is answered if the module runs in the emulator or a `.cr` file names it; otherwise it goes unanswered |
 
 ---
 
@@ -86,7 +87,8 @@ grep -i warden logs/wowee.log
 Key messages:
 - `Warden: Module loaded successfully` - module downloaded and loaded
 - `WardenModule: Calling module entry point` - emulation running
-- `Warden: Loaded N CR entries` / `Warden: No .cr file found` - whether hash requests can be answered
+- `Warden: Loaded N CR entries` / `Warden: No usable .cr file` - whether hash requests can be answered from a table
+- `Warden: HASH_REQUEST answered by the module's own handler` - answered by emulation instead (`WOWEE_WARDEN_EMULATE_HASH=0` turns that off)
 - `Warden: (sync) Parsed N checks` / `Warden: (async) Parsed N checks` - a check request was answered
 - `WardenMemory: WoW.exe not found` - memory checks will answer "unmapped"
 - `packetsAfterGate=0` - server not responding after Warden exchange (debug level)
@@ -95,7 +97,7 @@ Key messages:
 
 ## Check Types
 
-Check opcodes are per module (read from the `.cr` header). Each result goes into one
+Check opcodes are per module (read from the `.cr` header, or the built-in table). Each result goes into one
 `CHEAT_CHECKS_RESULT` (`[0x02][uint16 len][uint32 checksum][results]`):
 
 | Name | Response |

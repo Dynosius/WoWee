@@ -494,6 +494,30 @@ void WardenHandler::handleWardenData(network::Packet& packet) {
                 LOG_DEBUG("Warden: Seed not found in ", wardenCREntries_.size(), " CR entries");
             }
 
+            // --- No CR match: ask the module itself ---
+            // The module computes its own reply and the keys the exchange
+            // switches to, so where it runs its answer is the right one for
+            // any server. WOWEE_WARDEN_EMULATE_HASH=0 skips it, for telling a
+            // wrong emulated answer from a server that rejects the client.
+            {
+                const char* emulateEnv = std::getenv("WOWEE_WARDEN_EMULATE_HASH");
+                const bool emulateAllowed = !(emulateEnv && std::string(emulateEnv) == "0");
+                uint8_t reply[20];
+                std::vector<uint8_t> rc4State;
+                if (emulateAllowed && wardenLoadedModule_ &&
+                    wardenLoadedModule_->answerHashRequest(seed.data(), owner_.getSessionKey(),
+                                                           reply, rc4State)) {
+                    std::vector<uint8_t> resp;
+                    resp.push_back(WARDEN_CMSG_HASH_RESULT);
+                    resp.insert(resp.end(), reply, reply + 20);
+                    sendWardenResponse(resp);
+                    wardenCrypto_->replaceState(rc4State);
+                    LOG_INFO("Warden: HASH_REQUEST answered by the module's own handler");
+                    wardenState_ = WardenState::WAIT_CHECKS;
+                    break;
+                }
+            }
+
             // --- No CR match: decide strategy based on server strictness ---
             {
                 std::string seedHex;

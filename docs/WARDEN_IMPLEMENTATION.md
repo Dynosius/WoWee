@@ -14,7 +14,8 @@ return check results.
 Wowee runs the x86 module through Unicorn Engine CPU emulation - in an emulated
 environment with Windows API hooks, without Wine or a Windows OS. The check replies
 are built by the client rather than by the module: memory reads are served from a
-`WoW.exe` image on disk, and hash requests from pre-computed `.cr` files.
+`WoW.exe` image on disk. Hash requests are answered from pre-computed `.cr` files
+where one matches, and otherwise by the module itself.
 
 ---
 
@@ -71,7 +72,17 @@ The same directory holds `<MD5>.cr` files - pre-computed challenge/response entr
 for a module (a 17-byte header carrying the module's nine check opcodes, then 68-byte
 entries of seed, reply and the next RC4 key pair). `WardenHandler::loadWardenCRFile`
 reads one on `MODULE_USE`, and a `HASH_REQUEST` whose seed matches an entry is
-answered from it.
+answered from it. With no file, the module every TrinityCore/AzerothCore realm sends
+to 3.3.5a (`79C0768D657977D697E10BAD956CCED1`) is answered from a built-in table
+(`knownWardenCR`, the constants AzerothCore publishes).
+
+A `HASH_REQUEST` no table answers is handed to the module. `WardenModule::answerHashRequest`
+keys it from the session key (`GenerateRC4Keys`), gives its `PacketHandler` the request
+encrypted as the server sends it, reads its encrypted `HASH_RESULT` back, then unloads
+it - which is when a module hands the client its new cipher state through `SetRC4Data`.
+The client installs that state as is (`WardenCrypto::replaceState`). The module's exports
+and client services are thiscall: the object pointer travels in `ECX`, and the first
+dword of each object is its function table.
 
 ---
 
@@ -115,7 +126,8 @@ Sub-opcodes inside the decrypted payload (`include/game/warden_constants.hpp`):
 
 ## Check Responses
 
-Check type opcodes differ per module; they are read from the `.cr` file header and
+Check type opcodes differ per module; they are read from the `.cr` file header (or the
+built-in table) and
 XORed with the request's last byte. `WardenHandler::handleWardenData` answers each one:
 
 | Check type | Reply |
@@ -137,7 +149,7 @@ in `$WOWEE_INTEGRITY_DIR`, a few home-directory locations, and `Data/misc` /
 `Data/expansions/<id>/misc`, and fakes `KUSER_SHARED_DATA`. Without it, memory checks
 answer `0xE9`.
 
-A `HASH_REQUEST` with no matching `.cr` entry gets no reply on WotLK/TBC and Turtle
+A `HASH_REQUEST` that neither a table nor the module answers gets no reply on WotLK/TBC and Turtle
 (AzerothCore tolerates the silence and rejects a wrong hash; Turtle-derived realms
 close the connection) - `WOWEE_WARDEN_TURTLE_NO_CR=fallback` overrides that for Turtle.
 1.12.1 realms are sent a SHA1 of the module image as a fallback.
