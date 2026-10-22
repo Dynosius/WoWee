@@ -12,9 +12,7 @@
 //   ( [16 seed][20 reply][16 clientKey][16 serverKey] ) * N  = 68 bytes each
 //
 // The first eight header bytes are historical and unread; the nine opcodes and
-// the records are what matter. Reading and writing live here, together, so the
-// two cannot drift apart - the reader skipped the first eight bytes and the
-// writer has to lay down something there for it to skip.
+// the records are what matter.
 
 #include <cstdint>
 #include <cstdlib>
@@ -105,26 +103,6 @@ inline bool knownWardenCR(const std::string& moduleHashHex, uint8_t outOpcodes[9
     std::memcpy(outOpcodes, kOpcodes, 9);
     outRecords.push_back(kRecord);
     return true;
-}
-
-/// Write a `.cr` file. The eight historical header bytes are written as zero,
-/// which is what the reader skips. Returns false if the path cannot be opened.
-inline bool writeWardenCR(const std::string& path, const uint8_t opcodes[9],
-                          const std::vector<WardenCRRecord>& records) {
-    if (records.empty()) return false;
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) return false;
-
-    const uint8_t zero8[8] = {};
-    out.write(reinterpret_cast<const char*>(zero8), 8);
-    out.write(reinterpret_cast<const char*>(opcodes), 9);
-    for (const auto& r : records) {
-        out.write(reinterpret_cast<const char*>(r.seed), 16);
-        out.write(reinterpret_cast<const char*>(r.reply), 20);
-        out.write(reinterpret_cast<const char*>(r.clientKey), 16);
-        out.write(reinterpret_cast<const char*>(r.serverKey), 16);
-    }
-    return out.good();
 }
 
 }  // namespace game

@@ -1,17 +1,17 @@
-// The `.cr` cache format round-trips.
+// The `.cr` cache format reads as laid out.
 //
-// A module's HASH_REQUEST constants are written once and read back many
-// sessions later; a writer that lays the bytes down in an order the reader
-// does not expect is a cache that silently answers a challenge wrong, which a
-// server rejects by closing the connection with nothing said. These pin the
-// header skip, the record layout and the record count against each other.
+// A module's HASH_REQUEST constants are read from a file someone else wrote;
+// a reader that takes the bytes in an order other than the format's is a cache
+// that silently answers a challenge wrong, which a server rejects by closing
+// the connection with nothing said. These lay files out by hand, byte for
+// byte, and pin the header skip, the record layout and the record count.
 #include <catch_amalgamated.hpp>
 #include "game/warden_cr_file.hpp"
 
 #include <atomic>
 #include <cstring>
-#include <openssl/sha.h>
 #include <filesystem>
+#include <openssl/sha.h>
 
 using namespace wowee::game;
 namespace fs = std::filesystem;
@@ -31,14 +31,30 @@ std::string tempPath() {
     return (fs::temp_directory_path() /
             ("wowee_cr_test_" + std::to_string(counter++) + ".cr")).string();
 }
+
+// [8 unread][9 opcodes] then [16 seed][20 reply][16 clientKey][16 serverKey]
+// per record. The eight unread bytes are filled so a reader that took them
+// for opcodes would show it.
+void layOut(const std::string& path, const uint8_t opcodes[9],
+            const std::vector<WardenCRRecord>& records) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    const uint8_t unread[8] = {0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE};
+    out.write(reinterpret_cast<const char*>(unread), 8);
+    out.write(reinterpret_cast<const char*>(opcodes), 9);
+    for (const auto& r : records) {
+        out.write(reinterpret_cast<const char*>(r.seed), 16);
+        out.write(reinterpret_cast<const char*>(r.reply), 20);
+        out.write(reinterpret_cast<const char*>(r.clientKey), 16);
+        out.write(reinterpret_cast<const char*>(r.serverKey), 16);
+    }
+}
 }  // namespace
 
-TEST_CASE("a written .cr reads back byte for byte", "[wardencr]") {
+TEST_CASE("a .cr file reads back field for field", "[wardencr]") {
     const std::string path = tempPath();
     const uint8_t opcodes[9] = {0xF3, 0xB2, 0x98, 0x11, 0x5A, 0x6C, 0x7D, 0x8E, 0x9F};
-    std::vector<WardenCRRecord> records = {makeRecord(1), makeRecord(200)};
-
-    REQUIRE(writeWardenCR(path, opcodes, records));
+    const std::vector<WardenCRRecord> records = {makeRecord(1), makeRecord(200)};
+    layOut(path, opcodes, records);
 
     uint8_t readOpcodes[9] = {};
     std::vector<WardenCRRecord> readBack;
@@ -56,22 +72,20 @@ TEST_CASE("a written .cr reads back byte for byte", "[wardencr]") {
 }
 
 TEST_CASE("the first eight header bytes are ignored on read", "[wardencr]") {
-    // The writer zeroes them and the reader skips them; a reader that counted
-    // them as a record would come up one short and misread every field.
+    // A reader that counted them as opcodes, or as the start of a record,
+    // would misread every field after them.
     const std::string path = tempPath();
     const uint8_t opcodes[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
-    const std::vector<WardenCRRecord> records = {makeRecord(42)};
-    REQUIRE(writeWardenCR(path, opcodes, records));
-
-    // Header + exactly one record, nothing more.
-    const auto size = fs::file_size(path);
-    CHECK(size == kWardenCRHeaderSize + kWardenCRRecordSize);
+    layOut(path, opcodes, {makeRecord(42)});
+    CHECK(fs::file_size(path) == kWardenCRHeaderSize + kWardenCRRecordSize);
 
     uint8_t readOpcodes[9] = {};
     std::vector<WardenCRRecord> readBack;
     REQUIRE(readWardenCR(path, readOpcodes, readBack));
     CHECK(readBack.size() == 1);
+    CHECK(readOpcodes[0] == 1);
     CHECK(readOpcodes[8] == 9);
+    CHECK(readBack[0].seed[0] == 42);
     fs::remove(path);
 }
 
@@ -83,16 +97,10 @@ TEST_CASE("a truncated or missing .cr is refused, not half-read", "[wardencr]") 
 
     // A header with no whole record behind it has nothing to answer with.
     const std::string path = tempPath();
-    {
-        std::ofstream o(path, std::ios::binary);
-        const uint8_t header[kWardenCRHeaderSize] = {};
-        o.write(reinterpret_cast<const char*>(header), kWardenCRHeaderSize);
-    }
+    layOut(path, opcodes, {});
     CHECK_FALSE(readWardenCR(path, opcodes, out));
+    CHECK(out.empty());
     fs::remove(path);
-
-    // An empty record set is not a file worth writing.
-    CHECK_FALSE(writeWardenCR(tempPath(), opcodes, {}));
 }
 
 TEST_CASE("the TrinityCore/AzerothCore module answers from the built-in table", "[wardencr]") {
