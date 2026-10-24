@@ -444,6 +444,22 @@ void WardenMemory::patchRuntimeGlobals() {
     writeLE32(LAST_HARDWARE_ACTION, nowMs - 2000);
     LOG_DEBUG("WardenMemory: Patched LastHardwareAction @0x", std::hex, LAST_HARDWARE_ACTION, std::dec);
 
+    // The same scripted scans at the 2.4.3 and 3.3.5a addresses, from CMaNGOS
+    // mangos-tbc and mangos-wotlk (Anticheat/module/Warden/wardenwin.cpp). They
+    // point into the fake objects above. Both cores hold SMSG_CHAR_ENUM back
+    // until the SYSTEM_INFO read succeeds, so without the module pointer the
+    // login stops at the character list.
+    if (fileBuild_ == 8606) {
+        writeLE32(0xE118D8, FAKE_WARDEN_BASE);       // Warden module
+        writeLE32(0xD2A15C, FAKE_DEVICE);            // g_theGxDevicePtr; device+0x3864 is in the fill
+        writeLE32(0xDA4510, enables);                // CWorld::enables
+        writeLE32(0xBE10FC, nowMs - 2000);           // CSimpleTop::m_eventTime
+        LOG_DEBUG("WardenMemory: Patched 2.4.3 Warden module, EndScene, enables and event time");
+    } else if (fileBuild_ == 12340) {
+        writeLE32(0xD31A4C, FAKE_WARDEN_BASE);       // Warden module
+        LOG_DEBUG("WardenMemory: Patched 3.3.5a Warden module @0xd31a4c");
+    }
+
     // Embed the 37-byte Warden module memcpy pattern in BSS so that
     // FIND_CODE_BY_HASH (PAGE_B) brute-force search can find it.
     // This is the pattern VMaNGOS's "Warden Memory Read check" looks for.
