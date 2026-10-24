@@ -63,6 +63,8 @@
 #include <cstdio>
 #include <climits>
 #include <cstring>
+#include <bit>
+#include <optional>
 #include <limits>
 #include <openssl/sha.h>
 #include <openssl/hmac.h>
@@ -240,6 +242,60 @@ LockOpenPlan planGameObjectOpen(pipeline::AssetManager* assets,
     return plan;
 }
 
+
+// Whether a point is close enough to use a game object, as the 3.3.5a client's
+// CGGameObject_C_TypeBase::CheckRange (0x0070FA70) decides it: the display's
+// GeoBox, scaled, grown by the reach on every side and tested in the object's
+// own frame, so a big object is usable from anywhere along its length and a
+// small one only from close by. The reach is 5 yards, or the open spell's range
+// when one opens it; every OPEN_LOCK and gather spell in Spell.dbc has the
+// 5-yard Combat Range, so the two agree. Fishing nodes reach 100 and spell
+// focuses test a sphere. The client uses the door's animation bounds for type
+// 0; the display box stands in for them, as it does on the server. nullopt
+// when the layout has no box (only WotLK's maps one) or the display has no row.
+std::optional<bool> withinGameObjectReach(pipeline::AssetManager* assets,
+                                          const GameObjectQueryResponseData* info,
+                                          const Entity& go, const glm::vec3& point) {
+    if (!assets || !info) return std::nullopt;
+    constexpr uint32_t kGoTypeSpellFocus = 8;
+    constexpr uint32_t kGoTypeFishingNode = 17;
+    const float reach = info->type == kGoTypeFishingNode ? 100.0f : 5.0f;
+    const glm::vec3 offset = point - glm::vec3(go.getX(), go.getY(), go.getZ());
+    if (info->type == kGoTypeSpellFocus) return glm::length(offset) <= reach;
+
+    const auto* layout = pipeline::getActiveDBCLayout()
+        ? pipeline::getActiveDBCLayout()->getLayout("GameObjectDisplayInfo") : nullptr;
+    const uint32_t minField = layout ? layout->field("GeoBoxMinX") : 0xFFFFFFFF;
+    const uint32_t maxField = layout ? layout->field("GeoBoxMaxX") : 0xFFFFFFFF;
+    if (minField == 0xFFFFFFFF || maxField == 0xFFFFFFFF) return std::nullopt;
+    auto displayDbc = assets->loadDBC("GameObjectDisplayInfo.dbc");
+    if (!displayDbc || !displayDbc->isLoaded() ||
+        minField + 3 > displayDbc->getFieldCount() ||
+        maxField + 3 > displayDbc->getFieldCount()) {
+        return std::nullopt;
+    }
+    const int32_t row = displayDbc->findRecordById(info->displayId);
+    if (row < 0) return std::nullopt;
+
+    float scale = 1.0f;
+    const uint16_t scaleField = fieldIndex(UF::OBJECT_FIELD_SCALE_X);
+    if (scaleField != 0xFFFF && go.getField(scaleField) != 0) {
+        scale = std::bit_cast<float>(go.getField(scaleField));
+        if (scale <= 0.01f || scale > 100.0f) scale = 1.0f;
+    }
+    // Into the model's frame: +X along its facing, +Y to its left. Canonical
+    // yaw c faces (cos c, -sin c) in (north, west).
+    const float c = go.getOrientation();
+    const glm::vec3 local(offset.x * std::cos(c) - offset.y * std::sin(c),
+                          offset.x * std::sin(c) + offset.y * std::cos(c),
+                          offset.z);
+    for (int axis = 0; axis < 3; ++axis) {
+        const float lo = displayDbc->getFloat(static_cast<uint32_t>(row), minField + axis) * scale - reach;
+        const float hi = displayDbc->getFloat(static_cast<uint32_t>(row), maxField + axis) * scale + reach;
+        if (!(local[axis] > lo && local[axis] < hi)) return false;
+    }
+    return true;
+}
 
 uint32_t gatherSpellForGameObject(const GameObjectQueryResponseData* info, const std::string& name) {
     if (info && info->type != 3) return 0; // GAMEOBJECT_TYPE_CHEST
@@ -3130,8 +3186,14 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         interactionDistance = dist3d;
         // Fishing bobbers are intentionally cast beyond normal GO-use range.
         // Only the owned bobber whose bite we observed gets the extended range.
+        // Anything else is measured against its display box when there is one,
+        // and against a 10-yard sphere when there is not.
+        const std::optional<bool> inReach = guid == hookedFishingBobberGuid_
+            ? std::nullopt
+            : withinGameObjectReach(services_.assetManager, goInfo, *entity,
+                                    glm::vec3(movementInfo.x, movementInfo.y, movementInfo.z));
         const float maxInteractDistance = (guid == hookedFishingBobberGuid_) ? 30.0f : 10.0f;
-        if (dist3d > maxInteractDistance) {
+        if (inReach ? !*inReach : dist3d > maxInteractDistance) {
             raiseUiError("Too far away.");
             return;
         }

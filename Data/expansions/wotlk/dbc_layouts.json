@@ -131,6 +131,12 @@
     "ID": 0
   },
   "GameObjectDisplayInfo": {
+    "GeoBoxMaxX": 15,
+    "GeoBoxMaxY": 16,
+    "GeoBoxMaxZ": 17,
+    "GeoBoxMinX": 12,
+    "GeoBoxMinY": 13,
+    "GeoBoxMinZ": 14,
     "ID": 0,
     "ModelName": 1
   },
