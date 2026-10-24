@@ -1,5 +1,15 @@
 # Changelog
 
+## [v3.1.53] - 2026-10-24
+
+### Fixed
+- **TBC logins on CMaNGOS realms stopped at the character list.** CMaNGOS holds the character list until Warden reads the client's system information, and the 2.4.3 Warden module, `g_theGxDevicePtr`, `CWorld::enables` and last-input addresses were left unset. They now point at the emulated runtime data, and the 3.3.5a Warden module address is set for CMaNGOS WotLK. Addresses come from CMaNGOS's scripted scans; live realm testing remains required
+- **Open-lock spells follow the 3.3.5a client's skill rule.** A known spell is cast only when its minimum points reach the lock's Skill, or 5 x the object's level when the lock has none. Classic and TBC keep the previous behavior
+- **Gameobject use range is measured against the display box on WotLK.** The box is scaled, rotated and extended by 5 yards, so large objects can be used along their full length and small ones require a closer approach. Fishing nodes reach 100 yards and spell focuses use a sphere. Classic and TBC keep the 10-yard sphere
+
+### Documentation
+- The README and quickstart advise limiting build jobs, for example `-j2`, on machines that run out of memory
+
 ## [v3.1.52] - 2026-10-22
 
 ### Added
