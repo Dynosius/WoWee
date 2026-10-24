@@ -207,6 +207,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
+With the default Makefile generator, `--parallel` without a number starts
+every compile job at once, and the larger files need a lot of memory; that has run a
+32 GB machine out of memory. Give it a limit, such as `cmake --build build -j2`,
+or `-j4` with 16 GB or more.
+
 The `build.sh` and `build.ps1` helpers run the same build and also clone AMD's
 FidelityFX SDKs into `extern/`. Those are only used when `WOWEE_ENABLE_AMD_FSR2`
 or `WOWEE_ENABLE_AMD_FSR3_FRAMEGEN` is turned on, and both are off by default;
