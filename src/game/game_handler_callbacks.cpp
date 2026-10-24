@@ -136,7 +136,8 @@ struct LockOpenPlan {
 // is UseDirect, with keyItemId set so the caller can move the key into a bag.
 LockOpenPlan planGameObjectOpen(pipeline::AssetManager* assets,
                                 const GameObjectQueryResponseData* info,
-                                const std::unordered_set<uint32_t>& knownSpells) {
+                                const std::unordered_set<uint32_t>& knownSpells,
+                                uint32_t playerLevel, uint32_t goLevel) {
     LockOpenPlan plan;
     const uint32_t lockId = gameObjectLockId(info);
     if (!assets || lockId == 0) return plan;
@@ -154,6 +155,36 @@ LockOpenPlan planGameObjectOpen(pipeline::AssetManager* assets,
         ? pipeline::getActiveDBCLayout()->getLayout("Spell") : nullptr;
     const uint32_t effect0Field = spellL ? spellL->field("Effect0") : 0xFFFFFFFF;
     const uint32_t misc0Field   = spellL ? spellL->field("EffectMiscValue0") : 0xFFFFFFFF;
+    // The 3.3.5a client (CGGameObject_C::IsLocked) only takes a spell whose
+    // minimum points reach the lock's Skill, or 5 x the object's level when the
+    // lock has none. The player's skill never enters it: Pick Lock's points grow
+    // 5 per level and stand in for it. Only the WotLK layout maps these columns.
+    // Before 3.1 Lockpicking was a trained skill the server added to the
+    // points, so the check would turn away picks those servers accept.
+    const uint32_t base0Field     = spellL ? spellL->field("EffectBasePoints0") : 0xFFFFFFFF;
+    const uint32_t perLevel0Field = spellL ? spellL->field("EffectRealPointsPerLevel0") : 0xFFFFFFFF;
+    const uint32_t maxLevelField  = spellL ? spellL->field("MaxLevel") : 0xFFFFFFFF;
+    const uint32_t baseLevelField = spellL ? spellL->field("BaseLevel") : 0xFFFFFFFF;
+    const uint32_t spellLevelField = spellL ? spellL->field("SpellLevel") : 0xFFFFFFFF;
+    const bool checkPoints =
+        base0Field != 0xFFFFFFFF && perLevel0Field != 0xFFFFFFFF &&
+        maxLevelField != 0xFFFFFFFF && baseLevelField != 0xFFFFFFFF &&
+        spellLevelField != 0xFFFFFFFF &&
+        base0Field + 3 <= spellDbc->getFieldCount() &&
+        perLevel0Field + 3 <= spellDbc->getFieldCount();
+    // basePoints + 1 + perLevel x (caster level, clamped to the spell's level
+    // range, minus SpellLevel); Spell_C_GetMinMaxPoints without modifiers.
+    const auto minPoints = [&](uint32_t spellRow, uint32_t effect) {
+        int32_t level = static_cast<int32_t>(playerLevel);
+        const int32_t maxLevel = spellDbc->getInt32(spellRow, maxLevelField);
+        const int32_t baseLevel = spellDbc->getInt32(spellRow, baseLevelField);
+        if (maxLevel > 0 && level > maxLevel) level = maxLevel;
+        else if (level < baseLevel) level = baseLevel;
+        level -= spellDbc->getInt32(spellRow, spellLevelField);
+        return spellDbc->getInt32(spellRow, base0Field + effect) + 1 +
+               static_cast<int32_t>(spellDbc->getFloat(spellRow, perLevel0Field + effect) *
+                                    static_cast<float>(level));
+    };
     if (!lockDbc || !spellDbc || !lockDbc->isLoaded() || !spellDbc->isLoaded() ||
         lockDbc->getFieldCount() < 33 ||
         effect0Field == 0xFFFFFFFF || misc0Field == 0xFFFFFFFF ||
@@ -172,6 +203,9 @@ LockOpenPlan planGameObjectOpen(pipeline::AssetManager* assets,
             const uint32_t keyType = lockDbc->getUInt32(row, 1 + slot);
             const uint32_t keyIndex = lockDbc->getUInt32(row, 9 + slot);
             if (keyIndex == 0) continue;
+            // Skill[8] at cols 17-24.
+            const uint32_t lockSkill = lockDbc->getUInt32(row, 17 + slot);
+            const int32_t requiredPoints = static_cast<int32_t>(lockSkill ? lockSkill : 5 * goLevel);
 
             if (keyType == kLockKeyItem) {
                 plan.keyItemId = keyIndex; // remember the key so we can locate it
@@ -188,6 +222,12 @@ LockOpenPlan planGameObjectOpen(pipeline::AssetManager* assets,
                     constexpr uint32_t kSpellEffectOpenLock = 33;
                     if (spellDbc->getUInt32(spellRow, effect0Field + effect) == kSpellEffectOpenLock &&
                         spellDbc->getUInt32(spellRow, misc0Field + effect) == keyIndex) {
+                        if (checkPoints && minPoints(spellRow, effect) < requiredPoints) {
+                            LOG_INFO("GO open-lock spell ", spellId, " too weak: points ",
+                                     minPoints(spellRow, effect), " < ", requiredPoints,
+                                     " (lockId=", lockId, ")");
+                            continue;
+                        }
                         plan.method = LockOpenMethod::CastSpell;
                         plan.spellId = spellId;
                         return plan;
@@ -3181,8 +3221,12 @@ void GameHandler::performGameObjectInteractionNow(uint64_t guid) {
         // Pick Lock, or the generic Opening), on every expansion; the server then
         // validates the lock. A plain CMSG_GAMEOBJ_USE only opens unlocked /
         // server-gated quest containers (e.g. the Legend of Stalvan Sealed Crate).
+        const uint16_t goLevelField = fieldIndex(UF::GAMEOBJECT_LEVEL);
+        const uint32_t goLevel = (entity && goLevelField != 0xFFFF)
+            ? entity->getField(goLevelField) : 0;
         const LockOpenPlan plan = planGameObjectOpen(
-            services_.assetManager, goInfo, spellHandler_->getKnownSpells());
+            services_.assetManager, goInfo, spellHandler_->getKnownSpells(),
+            getPlayerLevel(), goLevel);
         if (plan.method == LockOpenMethod::CastSpell) {
             auto castPacket = getPacketParsers()->buildCastGameObjectSpell(
                 plan.spellId, guid, 0);
